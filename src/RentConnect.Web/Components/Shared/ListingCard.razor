@@ -1,0 +1,78 @@
+<article class="listing-card">
+    <div class="listing-top">
+        <div>
+            <div class="listing-title">@Listing.Title</div>
+            <div class="listing-region">@Listing.Region · @Listing.Bedrooms غرف</div>
+        </div>
+        <div class="listing-price">@Listing.PriceJod د.أ</div>
+    </div>
+
+    <span class="badge @StatusBadgeClass">@StatusLabel</span>
+
+    @if (Listing.IsDisabledByAdmin)
+    {
+        <div class="admin-disabled-banner">⚠ تم تعطيل هذا الإعلان من قِبل الإدارة - غير ظاهر للمستخدمين</div>
+    }
+
+    <div class="listing-meta">
+        <span>📞 @Listing.OwnerPhone</span>
+        <span>@(Listing.IsFurnished ? "🛋 مفروشة" : "غير مفروشة")</span>
+    </div>
+
+    <div class="listing-stats-row">
+        <span>👁 @Listing.ViewCount مشاهدة</span>
+        <span>📞 @Listing.PhoneRevealCount إظهار للرقم</span>
+    </div>
+
+    <div class="freshness">
+        <span class="freshness-label">آخر تأكيد: منذ @DaysSince @(DaysSince == 1 ? "يوم" : "أيام")</span>
+        <div class="freshness-bar"><div class="freshness-fill" style="width:@(FreshnessPercent)%; background:@FreshnessColor"></div></div>
+    </div>
+
+    <div class="listing-actions">
+        <button class="action-btn @(Listing.Status == ListingStatus.Available ? "active-available" : "")"
+                @onclick="() => OnStatusChange.InvokeAsync((Listing.Id, ListingStatus.Available))">✅ متوفر</button>
+        <button class="action-btn @(Listing.Status == ListingStatus.Rented ? "active-rented" : "")"
+                @onclick="() => OnStatusChange.InvokeAsync((Listing.Id, ListingStatus.Rented))">🔑 متأجّر</button>
+        <button class="action-btn @(Listing.Status == ListingStatus.Suspended ? "active-suspended" : "")"
+                @onclick="() => OnStatusChange.InvokeAsync((Listing.Id, ListingStatus.Suspended))">⏸ معلّق</button>
+    </div>
+
+    <div class="card-footer-actions">
+        <a class="link-btn" href="/listing/@Listing.Id" target="_blank">👁 عرض الإعلان</a>
+        <button class="link-btn" @onclick="() => OnEdit.InvokeAsync(Listing.Id)">✏️ تعديل</button>
+        <button class="link-btn danger" @onclick="() => OnDelete.InvokeAsync(Listing.Id)">🗑 حذف</button>
+    </div>
+</article>
+
+@code {
+    [Parameter, EditorRequired] public ListingDto Listing { get; set; } = default!;
+    [Parameter] public EventCallback<(Guid Id, ListingStatus NewStatus)> OnStatusChange { get; set; }
+    [Parameter] public EventCallback<Guid> OnEdit { get; set; }
+    [Parameter] public EventCallback<Guid> OnDelete { get; set; }
+
+    private int DaysSince => (int)(DateTime.UtcNow - Listing.LastConfirmedAt).TotalDays;
+
+    private int FreshnessPercent => Math.Min(100, (int)Math.Round(DaysSince / 10.0 * 100));
+
+    private string FreshnessColor => FreshnessPercent switch
+    {
+        < 40 => "var(--olive)",
+        < 75 => "var(--amber)",
+        _ => "var(--red)"
+    };
+
+    private string StatusLabel => Listing.Status switch
+    {
+        ListingStatus.Available => "متوفر",
+        ListingStatus.Rented => "متأجّر",
+        _ => "معلّق"
+    };
+
+    private string StatusBadgeClass => Listing.Status switch
+    {
+        ListingStatus.Available => "badge-available",
+        ListingStatus.Rented => "badge-rented",
+        _ => "badge-suspended"
+    };
+}

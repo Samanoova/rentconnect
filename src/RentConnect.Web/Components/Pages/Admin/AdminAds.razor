@@ -1,0 +1,167 @@
+@page "/admin/ads"
+@attribute [Authorize(Roles = RoleNames.Admin)]
+@using RentConnect.Web.Services
+@inject IUnitOfWork UnitOfWork
+@inject IListingAvailabilityChecker AvailabilityChecker
+
+<section class="page-header">
+    <h2>إدارة كل الإعلانات</h2>
+    <p>تعطيل أو حذف أي إعلان على المنصّة، بغض النظر عن صاحبه.</p>
+</section>
+
+@if (_checkMessage is not null)
+{
+    <p class="form-success">@_checkMessage</p>
+}
+@if (_checkError is not null)
+{
+    <p class="form-error">@_checkError</p>
+}
+
+<section class="toolbar">
+    <div class="filters">
+        <input @bind="_filterRegion" @bind:event="oninput" @bind:after="Reload" placeholder="فلترة حسب المنطقة..." />
+        <select @bind="_filterStatus" @bind:after="Reload">
+            <option value="">كل الحالات</option>
+            <option value="Available">متوفر</option>
+            <option value="Rented">متأجّر</option>
+            <option value="Suspended">معلّق</option>
+        </select>
+    </div>
+</section>
+
+@if (_listings.Count == 0)
+{
+    <p class="empty-state">لا توجد إعلانات مطابقة.</p>
+}
+else
+{
+    <div class="admin-table-wrap">
+        <table class="admin-table">
+            <thead>
+                <tr>
+                    <th>العنوان</th>
+                    <th>المالك</th>
+                    <th>المنطقة</th>
+                    <th>السعر</th>
+                    <th>الحالة</th>
+                    <th>👁 مشاهدات</th>
+                    <th>📞 إظهار الرقم</th>
+                    <th>ظاهر؟</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var listing in _listings)
+                {
+                    <tr>
+                        <td><a href="/listing/@listing.Id" target="_blank">@listing.Title</a></td>
+                        <td>@OwnerLabel(listing.OwnerId)</td>
+                        <td>@listing.Region</td>
+                        <td>@listing.PriceJod.ToString("N0") د.أ</td>
+                        <td>@StatusLabel(listing.Status)</td>
+                        <td>@listing.ViewCount</td>
+                        <td>@listing.PhoneRevealCount</td>
+                        <td>
+                            @if (listing.IsDisabledByAdmin)
+                            {
+                                <span class="badge badge-suspended">معطّل</span>
+                            }
+                            else
+                            {
+                                <span class="badge badge-available">ظاهر</span>
+                            }
+                        </td>
+                        <td class="admin-actions">
+                            <button class="link-btn" @onclick="() => ToggleDisabled(listing)">
+                                @(listing.IsDisabledByAdmin ? "تفعيل" : "تعطيل")
+                            </button>
+                            <button class="link-btn" disabled="@_isChecking" @onclick="() => TriggerAvailabilityCheck(listing)">
+                                📱 تحقق من التوفر
+                            </button>
+                            <button class="link-btn danger" @onclick="() => Delete(listing.Id)">حذف</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private List<ListingDto> _listings = new();
+    private Dictionary<string, UserDto> _usersById = new();
+    private string _filterRegion = string.Empty;
+    private string _filterStatus = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var users = await UnitOfWork.Users.GetAllAsync();
+        _usersById = users.ToDictionary(u => u.Id);
+        await Reload();
+    }
+
+    private async Task Reload()
+    {
+        ListingStatus? status = string.IsNullOrEmpty(_filterStatus) ? null : Enum.Parse<ListingStatus>(_filterStatus);
+        _listings = await UnitOfWork.Listings.GetAllAsync(
+            string.IsNullOrWhiteSpace(_filterRegion) ? null : _filterRegion,
+            status);
+    }
+
+    private string OwnerLabel(string? ownerId)
+    {
+        if (string.IsNullOrEmpty(ownerId) || !_usersById.TryGetValue(ownerId, out var user))
+            return "—";
+        return user.Email ?? user.UserName ?? "—";
+    }
+
+    private static string StatusLabel(ListingStatus status) => status switch
+    {
+        ListingStatus.Available => "متوفر",
+        ListingStatus.Rented => "متأجّر",
+        _ => "معلّق",
+    };
+
+    private async Task ToggleDisabled(ListingDto listing)
+    {
+        await UnitOfWork.Listings.SetDisabledByAdminAsync(listing.Id, !listing.IsDisabledByAdmin);
+        await UnitOfWork.CompleteAsync();
+        await Reload();
+    }
+
+    private async Task Delete(Guid id)
+    {
+        await UnitOfWork.Listings.DeleteAsync(id);
+        await UnitOfWork.CompleteAsync();
+        await Reload();
+    }
+
+    private bool _isChecking;
+    private string? _checkMessage;
+    private string? _checkError;
+
+    // يرسل سؤال واتساب لصاحب الإعلان للتأكد إذا العقار لسا متوفر أو تم تأجيره - نفس آلية
+    // "إلغاء الرسم" بس بدون رسم مرتبط (يستخدم Guid.Empty كمعرّف رسم بديل بما إنه مش مرتبط بفاتورة)
+    private async Task TriggerAvailabilityCheck(ListingDto listing)
+    {
+        _checkMessage = null;
+        _checkError = null;
+        _isChecking = true;
+
+        var (success, error) = await AvailabilityChecker.TriggerCheckAsync(
+            listing, Guid.Empty,
+            $"مرحباً، تريد إدارة RentConnect التأكد من حالة إعلانك \"{listing.Title}\".\nهل تم تأجيره؟ أجب بـ \"نعم\" أو \"لا\".");
+
+        if (success)
+        {
+            _checkMessage = $"تم إرسال رسالة تحقّق لصاحب إعلان \"{listing.Title}\".";
+        }
+        else
+        {
+            _checkError = error;
+        }
+
+        _isChecking = false;
+    }
+}

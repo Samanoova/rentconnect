@@ -1,0 +1,26 @@
+@using RentConnect.Web.Components.Layout
+@using RentConnect.Web.Components.Shared
+
+<Router AppAssembly="@typeof(Program).Assembly">
+    <Found Context="routeData">
+        <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)">
+            <NotAuthorized>
+                @if (context.User.Identity?.IsAuthenticated == true)
+                {
+                    <LayoutView Layout="@typeof(MainLayout)">
+                        <p style="padding:24px">لا تملك صلاحية الوصول لهذه الصفحة.</p>
+                    </LayoutView>
+                }
+                else
+                {
+                    <RedirectToLogin />
+                }
+            </NotAuthorized>
+        </AuthorizeRouteView>
+    </Found>
+    <NotFound>
+        <LayoutView Layout="@typeof(MainLayout)">
+            <p style="padding:24px">الصفحة غير موجودة.</p>
+        </LayoutView>
+    </NotFound>
+</Router>

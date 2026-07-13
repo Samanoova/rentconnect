@@ -1,0 +1,19 @@
+# Build artifacts
+bin/
+obj/
+
+# IDE
+.vs/
+.vscode/
+*.user
+
+# SQLite database + WAL files (contains real user data - never commit)
+*.db
+*.db-shm
+*.db-wal
+
+# User-uploaded content (listing photos, contract documents)
+src/RentConnect.Web/wwwroot/uploads/
+
+# Logs
+*.log

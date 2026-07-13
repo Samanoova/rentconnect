@@ -1,0 +1,769 @@
+@if (IsOpen)
+{
+    <div class="modal-overlay" @onclick="HandleOverlayClick">
+        <div class="modal modal-wizard" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h2>@(EditingId is null ? "إعلان جديد" : "تعديل الإعلان")</h2>
+                <button class="btn-close" @onclick="Close" aria-label="إغلاق">×</button>
+            </div>
+
+            <div class="wizard-steps">
+                @for (var i = 1; i <= TotalSteps; i++)
+                {
+                    var step = i;
+                    <div class="wizard-step @(step == _currentStep ? "active" : "") @(step < _currentStep ? "done" : "")">
+                        <span class="wizard-step-num">@(step < _currentStep ? "✓" : StepIcon(step))</span>
+                        <span class="wizard-step-label">@StepLabel(step)</span>
+                    </div>
+                }
+            </div>
+
+            <p class="wizard-required-legend"><span class="required-mark">*</span> حقل مطلوب</p>
+
+            <EditForm Model="_model" OnValidSubmit="HandleSubmit" class="modal-body">
+                <DataAnnotationsValidator />
+
+                @if (_currentStep == 1)
+                {
+                    <label>العنوان <span class="required-mark">*</span></label>
+                    <InputText @bind-Value="_model.Title" class="@FieldClass("Title")" placeholder="شقة مفروشة في عبدون" />
+
+                    <label>نوع العقار <span class="required-mark">*</span></label>
+                    <InputSelect @bind-Value="_model.PropertyType">
+                        <option value="@PropertyType.Apartment">شقة</option>
+                        <option value="@PropertyType.Studio">استديو</option>
+                        <option value="@PropertyType.Roof">روف</option>
+                        <option value="@PropertyType.Villa">فيلا</option>
+                    </InputSelect>
+
+                    <label>الوصف</label>
+                    <InputTextArea @bind-Value="_model.Description" rows="2" placeholder="تفاصيل إضافية عن العقار..." />
+
+                    <label>السعر (دينار) <span class="required-mark">*</span></label>
+                    <InputNumber @bind-Value="_model.PriceJod" class="@FieldClass("PriceJod")" />
+
+                    <label>الإيجار بينُدفع كل كام شهر؟ <span class="required-mark">*</span></label>
+                    <InputNumber @bind-Value="_model.PaymentIntervalMonths" min="1" class="@FieldClass("PaymentIntervalMonths")" />
+                    <p class="wizard-hint">مثلاً: 1 = شهرياً، 3 = كل 3 شهور، 12 = سنوياً... اكتب أي رقم يناسب الاتفاق.</p>
+
+                    <label>رابط المصدر الأصلي (اختياري)</label>
+                    <InputText @bind-Value="_model.SourceUrl" placeholder="مثلاً رابط منشور فيسبوك للإعلان الأصلي" />
+                    <p class="wizard-hint">لو نقلت هذا الإعلان من مكان آخر (مثل منشور فيسبوك)، ألصق رابطه هون كمرجع.</p>
+                }
+                else if (_currentStep == 2)
+                {
+                    <!-- مكوّن اختيار الموقع - منطقة نصية + خريطة تفاعلية لتحديد نقطة دقيقة -->
+                    <LocationPicker @bind-Region="_model.Region"
+                                    @bind-Latitude="_model.Latitude"
+                                    @bind-Longitude="_model.Longitude"
+                                    IsInvalid="@(_invalidField == "Region")" />
+
+                    <label>العنوان الدقيق (لا يُعرض للمستخدم العام)</label>
+                    <InputText @bind-Value="_model.PreciseAddress" placeholder="اسم العمارة، رقم الشارع..." />
+                }
+                else if (_currentStep == 3)
+                {
+                    <div class="grid-4">
+                        <div>
+                            <label>عدد الغرف</label>
+                            <InputNumber @bind-Value="_model.Bedrooms" />
+                        </div>
+                        <div>
+                            <label>حمامات</label>
+                            <InputNumber @bind-Value="_model.Bathrooms" />
+                        </div>
+                        <div>
+                            <label>المساحة (م²)</label>
+                            <InputNumber @bind-Value="_model.AreaSqm" />
+                        </div>
+                        <div>
+                            <label>الطابق</label>
+                            <InputNumber @bind-Value="_model.Floor" />
+                        </div>
+                    </div>
+
+                    <label class="checkbox-row">
+                        <InputCheckbox @bind-Value="_model.IsFurnished" />
+                        مفروشة
+                    </label>
+
+                    <label>المرافق المتوفرة</label>
+                    <div class="grid-4">
+                        <label class="checkbox-row">
+                            <InputCheckbox @bind-Value="_model.HasYard" />
+                            حوش
+                        </label>
+                        <label class="checkbox-row">
+                            <InputCheckbox @bind-Value="_model.HasBalcony" />
+                            بلكونة
+                        </label>
+                        <label class="checkbox-row">
+                            <InputCheckbox @bind-Value="_model.HasElevator" />
+                            مصعد
+                        </label>
+                        <label class="checkbox-row">
+                            <InputCheckbox @bind-Value="_model.HasGarage" />
+                            كراج
+                        </label>
+                    </div>
+
+                    <div class="wizard-section">
+                        <h4>💧 المياه</h4>
+                        <label>ساعة المياه</label>
+                        <InputSelect @bind-Value="_model.WaterMeterType">
+                            <option value="@WaterMeterType.Separate">منفصلة</option>
+                            <option value="@WaterMeterType.Shared">مشتركة</option>
+                        </InputSelect>
+
+                        <label>سعة خزان المياه (متر مكعب) - اختياري</label>
+                        <InputNumber @bind-Value="_model.WaterCubicMeters" placeholder="مثلاً: 2" />
+                    </div>
+
+                    <div class="wizard-section">
+                        <h4>⚡ الكهرباء</h4>
+                        <label>ساعة الكهرباء</label>
+                        <InputSelect @bind-Value="_model.ElectricityMeterType">
+                            <option value="@ElectricityMeterType.Separate">منفصلة</option>
+                            <option value="@ElectricityMeterType.Shared">مشتركة</option>
+                        </InputSelect>
+
+                        <label class="checkbox-row">
+                            <InputCheckbox @bind-Value="_model.IsElectricitySubsidized" />
+                            مدعومة (تعرفة حكومية)
+                        </label>
+                    </div>
+
+                    <label>رقم تواصل المالك <span class="required-mark">*</span></label>
+                    <InputText @bind-Value="_model.OwnerPhone" class="@FieldClass("OwnerPhone")" placeholder="07XXXXXXXX" />
+                }
+                else if (_currentStep == 4)
+                {
+                    <p class="wizard-hint">أي شروط خاصة عندك على المستأجر؟ (اختياري)</p>
+
+                    <label>مين بيقبل فيهم صاحب العقار؟</label>
+                    <InputSelect @bind-Value="_model.TenantPreference">
+                        <option value="@TenantPreference.Any">بدون شروط - الجميع مرحّب فيهم</option>
+                        <option value="@TenantPreference.FamiliesOnly">عائلات فقط</option>
+                        <option value="@TenantPreference.NewlywedsOnly">عرسان فقط</option>
+                        <option value="@TenantPreference.FemaleStudentsOnly">طالبات فقط</option>
+                        <option value="@TenantPreference.FemalesOnly">إناث فقط</option>
+                    </InputSelect>
+
+                    <label class="checkbox-row">
+                        <InputCheckbox @bind-Value="_model.RequiresEmployedTenant" />
+                        يشترط أن يكون المستأجر موظفاً
+                    </label>
+                }
+                else if (_currentStep == 5)
+                {
+                    <label>ضمان الإيجار المطلوب</label>
+                    <InputSelect @bind-Value="_model.SecurityGuarantee">
+                        <option value="@SecurityGuaranteeType.None">لا يوجد</option>
+                        <option value="@SecurityGuaranteeType.PromissoryNote">توقيع كمبيالة</option>
+                        <option value="@SecurityGuaranteeType.SecurityDeposit">مبلغ تأمين</option>
+                    </InputSelect>
+
+                    @if (_model.SecurityGuarantee == SecurityGuaranteeType.SecurityDeposit)
+                    {
+                        <label>مبلغ التأمين (دينار) <span class="required-mark">*</span></label>
+                        <InputNumber @bind-Value="_model.SecurityDepositJod" class="@FieldClass("SecurityDepositJod")" placeholder="مثلاً: 200" />
+                    }
+
+                    <label class="checkbox-row">
+                        <InputCheckbox @bind-Value="_model.HasRentalContract" />
+                        يوجد عقد إيجار رسمي
+                    </label>
+
+                    @if (_model.HasRentalContract)
+                    {
+                        <label>ملفات عقد الإيجار (اختياري)</label>
+                        <p class="wizard-hint">لو العقد أكثر من صفحة ممكن ترفع أكثر من ملف - صور أو PDF أو Word.</p>
+
+                        @if (RemainingContractDocuments.Count > 0)
+                        {
+                            <div class="image-preview-grid">
+                                @foreach (var doc in RemainingContractDocuments)
+                                {
+                                    <div class="image-preview">
+                                        @if (ListingDisplay.IsImageFile(doc.FileName))
+                                        {
+                                            <img src="@doc.Url" alt="@doc.FileName" />
+                                        }
+                                        else
+                                        {
+                                            <a href="@doc.Url" target="_blank" class="file-chip">📄<span>@doc.FileName</span></a>
+                                        }
+                                        <button type="button" class="image-remove" @onclick="() => RemoveExistingContractDocument(doc.Id)" aria-label="إزالة الملف">×</button>
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        <InputFile OnChange="HandleContractFilesSelected" multiple accept="image/*,.pdf,.doc,.docx" />
+
+                        @if (_selectedContractDocuments.Count > 0)
+                        {
+                            <div class="image-preview-grid">
+                                @foreach (var doc in _selectedContractDocuments)
+                                {
+                                    <div class="image-preview">
+                                        @if (doc.IsImage)
+                                        {
+                                            <img src="@doc.DataUrl" alt="@doc.FileName" />
+                                        }
+                                        else
+                                        {
+                                            <span class="file-chip">📄<span>@doc.FileName</span></span>
+                                        }
+                                        <button type="button" class="image-remove" @onclick="() => RemoveSelectedContractDocument(doc)" aria-label="إزالة الملف">×</button>
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        @if (_contractUploadError is not null)
+                        {
+                            <p class="form-error">@_contractUploadError</p>
+                        }
+                    }
+                }
+                else if (_currentStep == 6)
+                {
+                    <label>صور وفيديوهات العقار</label>
+                    <p class="wizard-hint">أضف صور واضحة للعقار، وممكن كمان ترفق مقطع فيديو قصير لعرضه بشكل أفضل.</p>
+
+                    <div class="media-counter-row">
+                        <span class="media-counter">📎 @CombinedMedia.Count من @MaxImageCount ملف</span>
+                    </div>
+
+                    @if (CombinedMedia.Count > 0)
+                    {
+                        <div class="image-preview-grid media-grid">
+                            @for (var i = 0; i < CombinedMedia.Count; i++)
+                            {
+                                var tile = CombinedMedia[i];
+                                var isCover = i == 0;
+                                <div class="image-preview media-tile">
+                                    @if (tile.IsVideo)
+                                    {
+                                        @if (tile.IsNew)
+                                        {
+                                            <span class="file-chip">🎥<span>@tile.FileName</span></span>
+                                        }
+                                        else
+                                        {
+                                            <video src="@tile.PreviewSource" muted preload="metadata"></video>
+                                            <span class="media-type-icon">🎥</span>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <img src="@tile.PreviewSource" alt="@tile.FileName" />
+                                    }
+
+                                    @if (isCover)
+                                    {
+                                        <span class="media-cover-badge">⭐ الرئيسية</span>
+                                    }
+                                    @if (tile.IsNew)
+                                    {
+                                        <span class="media-new-badge">جديد</span>
+                                    }
+
+                                    <button type="button" class="image-remove" @onclick="() => RemoveMediaTile(tile)" aria-label="إزالة الملف">×</button>
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    <label class="upload-dropzone">
+                        <InputFile OnChange="HandleFilesSelected" multiple accept="image/*,video/*" />
+                        <span class="upload-dropzone-icon">📤</span>
+                        <span class="upload-dropzone-text">اضغط لاختيار صور أو فيديو من جهازك</span>
+                        <span class="upload-dropzone-hint">حتى @MaxImageCount ملفات - الصورة الأولى تكون الصورة الرئيسية للإعلان</span>
+                    </label>
+
+                    @if (_uploadError is not null)
+                    {
+                        <p class="form-error">@_uploadError</p>
+                    }
+                }
+
+                @if (_stepError is not null)
+                {
+                    <p class="form-error">@_stepError</p>
+                }
+
+                @if (!string.IsNullOrEmpty(_errorMessage))
+                {
+                    <p class="form-error">@_errorMessage</p>
+                }
+
+                <div class="modal-footer wizard-footer">
+                    <button type="button" class="btn btn-ghost" @onclick="Close">إلغاء</button>
+
+                    <div class="wizard-nav">
+                        @if (_currentStep > 1)
+                        {
+                            <button type="button" class="btn btn-ghost" @onclick="GoPrevious">‹ السابق</button>
+                        }
+                        @if (_currentStep < TotalSteps)
+                        {
+                            <button type="button" class="btn btn-primary" @onclick="GoNext">التالي ›</button>
+                        }
+                        else
+                        {
+                            <button type="submit" class="btn btn-primary">حفظ الإعلان</button>
+                        }
+                    </div>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public Guid? EditingId { get; set; }
+    [Parameter] public string? OwnerId { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnSaved { get; set; }
+
+    [Inject] private IUnitOfWork UnitOfWork { get; set; } = default!;
+    [Inject] private IWebHostEnvironment Env { get; set; } = default!;
+    [Inject] private ILogger<ListingFormModal> Logger { get; set; } = default!;
+
+    private const long MaxImageSizeBytes = 8 * 1024 * 1024; // 8 ميغابايت لكل صورة
+    private const long MaxVideoSizeBytes = 50 * 1024 * 1024; // 50 ميغابايت لكل فيديو
+    private const int MaxImageCount = 10;
+    private const int TotalSteps = 6;
+
+    private ListingFormModel _model = new();
+    private readonly List<SelectedImage> _selectedImages = new();
+    private List<ListingImageDto> _existingImages = new();
+    private readonly HashSet<Guid> _removedImageIds = new();
+    private string? _uploadError;
+    private string? _errorMessage;
+    private string? _stepError;
+    private int _currentStep = 1;
+    private Guid? _loadedFor;
+
+    // ملفات عقد الإيجار - مجموعة منفصلة عن معرض صور العقار (يمكن تكون صور أو PDF/Word)
+    private const long MaxContractFileSizeBytes = 15 * 1024 * 1024; // 15 ميغابايت لكل ملف
+    private const int MaxContractFileCount = 10;
+    private readonly List<SelectedDocument> _selectedContractDocuments = new();
+    private List<ListingContractDocumentDto> _existingContractDocuments = new();
+    private readonly HashSet<Guid> _removedContractDocumentIds = new();
+    private string? _contractUploadError;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!IsOpen) return;
+
+        if (EditingId != _loadedFor)
+        {
+            _loadedFor = EditingId;
+            _errorMessage = null;
+            _stepError = null;
+            _invalidField = null;
+            _uploadError = null;
+            _currentStep = 1;
+            _selectedImages.Clear();
+            _removedImageIds.Clear();
+            _existingImages = new();
+
+            _selectedContractDocuments.Clear();
+            _removedContractDocumentIds.Clear();
+            _existingContractDocuments = new();
+            _contractUploadError = null;
+
+            if (EditingId is Guid id)
+            {
+                var listing = await UnitOfWork.Listings.GetByIdAsync(id);
+                if (listing is not null)
+                {
+                    _model = ListingFormModel.FromDto(listing);
+                    _existingImages = listing.Images.ToList();
+                    _existingContractDocuments = listing.ContractDocuments.ToList();
+                }
+            }
+            else
+            {
+                _model = new ListingFormModel();
+            }
+        }
+    }
+
+    private List<ListingImageDto> RemainingExistingImages =>
+        _existingImages.Where(i => !_removedImageIds.Contains(i.Id)).ToList();
+
+    // معرض موحّد يجمع الصور/الفيديوهات المرفوعة مسبقاً مع اللي المستخدم اختارها للتو،
+    // حتى يشوف المستخدم كل شي أضافه بمكان واحد وبنفس الترتيب اللي رح يظهر فيه بالإعلان
+    private List<MediaTile> CombinedMedia =>
+        RemainingExistingImages
+            .Select(i => new MediaTile(i.Url, ExtractFileName(i.Url), ListingDisplay.IsVideoFile(i.Url), false, i.Id, null))
+            .Concat(_selectedImages.Select(s => new MediaTile(s.DataUrl ?? string.Empty, s.FileName, s.IsVideo, true, null, s)))
+            .ToList();
+
+    private static string ExtractFileName(string url) => url.Split('/').LastOrDefault() ?? url;
+
+    private List<ListingContractDocumentDto> RemainingContractDocuments =>
+        _existingContractDocuments.Where(d => !_removedContractDocumentIds.Contains(d.Id)).ToList();
+
+    private static string StepLabel(int step) => step switch
+    {
+        1 => "البيانات الأساسية",
+        2 => "الموقع",
+        3 => "تفاصيل إضافية",
+        4 => "الشروط",
+        5 => "عقد الإيجار",
+        6 => "الصور",
+        _ => "",
+    };
+
+    private static string StepIcon(int step) => step switch
+    {
+        1 => "📋",
+        2 => "📍",
+        3 => "🏠",
+        4 => "📝",
+        5 => "📄",
+        6 => "🖼",
+        _ => "",
+    };
+
+    // اسم الحقل اللي فشل التحقق منه بآخر مرة - يُستخدم لتلوين ذلك الحقل بالأحمر
+    private string? _invalidField;
+
+    private (string Field, string Message)? ValidateStepDetailed(int step) => step switch
+    {
+        1 when string.IsNullOrWhiteSpace(_model.Title) => ("Title", "الحقل \"العنوان\" مطلوب."),
+        1 when _model.PriceJod <= 0 => ("PriceJod", "الحقل \"السعر\" مطلوب ويجب أن يكون أكبر من صفر."),
+        1 when _model.PaymentIntervalMonths < 1 => ("PaymentIntervalMonths", "الحقل \"الإيجار بينُدفع كل كام شهر؟\" يجب أن يكون 1 أو أكثر."),
+        2 when string.IsNullOrWhiteSpace(_model.Region) => ("Region", "الحقل \"المنطقة\" مطلوب."),
+        3 when string.IsNullOrWhiteSpace(_model.OwnerPhone) => ("OwnerPhone", "الحقل \"رقم تواصل المالك\" مطلوب."),
+        5 when _model.SecurityGuarantee == SecurityGuaranteeType.SecurityDeposit
+            && (!_model.SecurityDepositJod.HasValue || _model.SecurityDepositJod <= 0)
+            => ("SecurityDepositJod", "الحقل \"مبلغ التأمين\" مطلوب عند اختيار \"مبلغ تأمين\" كضمان."),
+        _ => null,
+    };
+
+    private string? ValidateStep(int step)
+    {
+        var result = ValidateStepDetailed(step);
+        _invalidField = result?.Field;
+        return result?.Message;
+    }
+
+    private string FieldClass(string field) => _invalidField == field ? "input-error" : "";
+
+    private void GoNext()
+    {
+        _stepError = ValidateStep(_currentStep);
+        if (_stepError is not null) return;
+
+        _currentStep++;
+    }
+
+    private void GoPrevious()
+    {
+        _stepError = null;
+        _invalidField = null;
+        _currentStep--;
+    }
+
+    private async Task HandleSubmit()
+    {
+        for (var step = 1; step < TotalSteps; step++)
+        {
+            _stepError = ValidateStep(step);
+            if (_stepError is not null)
+            {
+                _currentStep = step;
+                return;
+            }
+        }
+
+        try
+        {
+            if (EditingId is Guid id)
+            {
+                await UnitOfWork.Listings.UpdateAsync(id, _model.ToUpdateDto());
+
+                foreach (var imageId in _removedImageIds)
+                    await UnitOfWork.Listings.RemoveImageAsync(id, imageId);
+
+                if (_selectedImages.Count > 0)
+                {
+                    var newImageUrls = await SaveImagesToDiskAsync(_selectedImages);
+                    await UnitOfWork.Listings.AddImagesAsync(id, newImageUrls);
+                }
+
+                foreach (var docId in _removedContractDocumentIds)
+                    await UnitOfWork.Listings.RemoveContractDocumentAsync(id, docId);
+
+                if (_selectedContractDocuments.Count > 0)
+                {
+                    var newContractDocs = await SaveContractDocumentsToDiskAsync(_selectedContractDocuments);
+                    await UnitOfWork.Listings.AddContractDocumentsAsync(id, newContractDocs);
+                }
+            }
+            else
+            {
+                var imageUrls = await SaveImagesToDiskAsync(_selectedImages);
+                var contractDocs = await SaveContractDocumentsToDiskAsync(_selectedContractDocuments);
+                await UnitOfWork.Listings.AddAsync(_model.ToCreateDto(imageUrls, OwnerId, contractDocs));
+            }
+
+            await UnitOfWork.CompleteAsync();
+
+            await OnSaved.InvokeAsync();
+            await Close();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "فشل حفظ الإعلان (EditingId={EditingId}, OwnerId={OwnerId})", EditingId, OwnerId);
+            var detail = ex.InnerException?.Message ?? ex.Message;
+
+            // خرق قيد المفتاح الخارجي هون يعني عادةً إن حساب المستخدم بجلسة تسجيل الدخول
+            // (الكوكي) ما عاد موجوداً فعلياً بقاعدة البيانات - الحل: تسجيل خروج ودخول من جديد
+            _errorMessage = detail.Contains("FOREIGN KEY constraint failed", StringComparison.OrdinalIgnoreCase)
+                ? "تعذّر حفظ الإعلان: جلسة تسجيل الدخول غير صالحة حالياً. الرجاء تسجيل الخروج ثم الدخول من جديد والمحاولة مرة أخرى."
+                : $"تعذّر حفظ الإعلان: {detail}";
+        }
+    }
+
+    private async Task Close()
+    {
+        _loadedFor = null;
+        await OnClose.InvokeAsync();
+    }
+
+    private async Task HandleOverlayClick() => await Close();
+
+    private async Task HandleFilesSelected(InputFileChangeEventArgs e)
+    {
+        _uploadError = null;
+        var currentCount = _existingImages.Count(i => !_removedImageIds.Contains(i.Id)) + _selectedImages.Count;
+
+        foreach (var file in e.GetMultipleFiles(MaxImageCount))
+        {
+            if (currentCount >= MaxImageCount)
+            {
+                _uploadError = $"يمكن إضافة {MaxImageCount} ملفات كحد أقصى.";
+                break;
+            }
+
+            var isVideo = ListingDisplay.IsVideoFile(file.Name);
+            var isImage = ListingDisplay.IsImageFile(file.Name);
+
+            if (!isVideo && !isImage)
+            {
+                _uploadError = $"صيغة الملف \"{file.Name}\" غير مدعومة - الرجاء رفع صورة أو فيديو.";
+                continue;
+            }
+
+            var sizeLimit = isVideo ? MaxVideoSizeBytes : MaxImageSizeBytes;
+            if (file.Size > sizeLimit)
+            {
+                var limitLabel = isVideo ? "50" : "8";
+                _uploadError = $"الملف \"{file.Name}\" أكبر من الحد المسموح ({limitLabel} ميغابايت).";
+                continue;
+            }
+
+            using var stream = file.OpenReadStream(sizeLimit);
+            using var buffer = new MemoryStream();
+            await stream.CopyToAsync(buffer);
+            var bytes = buffer.ToArray();
+
+            // ما منولّد معاينة base64 للفيديو لتفادي تحميل عشرات الميغابايت داخل الصفحة
+            var dataUrl = isVideo ? null : $"data:{file.ContentType};base64,{Convert.ToBase64String(bytes)}";
+
+            _selectedImages.Add(new SelectedImage(file.Name, bytes, dataUrl, isVideo));
+            currentCount++;
+        }
+    }
+
+    private void RemoveImage(SelectedImage image) => _selectedImages.Remove(image);
+
+    private void RemoveExistingImage(Guid imageId) => _removedImageIds.Add(imageId);
+
+    private void RemoveMediaTile(MediaTile tile)
+    {
+        if (tile.IsNew && tile.PendingImage is not null)
+        {
+            RemoveImage(tile.PendingImage);
+        }
+        else if (tile.ExistingImageId is Guid id)
+        {
+            RemoveExistingImage(id);
+        }
+    }
+
+    private async Task HandleContractFilesSelected(InputFileChangeEventArgs e)
+    {
+        _contractUploadError = null;
+        var currentCount = _existingContractDocuments.Count(d => !_removedContractDocumentIds.Contains(d.Id)) + _selectedContractDocuments.Count;
+
+        foreach (var file in e.GetMultipleFiles(MaxContractFileCount))
+        {
+            if (currentCount >= MaxContractFileCount)
+            {
+                _contractUploadError = $"يمكن إضافة {MaxContractFileCount} ملفات كحد أقصى.";
+                break;
+            }
+
+            if (file.Size > MaxContractFileSizeBytes)
+            {
+                _contractUploadError = $"الملف \"{file.Name}\" أكبر من الحد المسموح (15 ميغابايت).";
+                continue;
+            }
+
+            var isImage = ListingDisplay.IsImageFile(file.Name);
+
+            using var stream = file.OpenReadStream(MaxContractFileSizeBytes);
+            using var buffer = new MemoryStream();
+            await stream.CopyToAsync(buffer);
+            var bytes = buffer.ToArray();
+
+            _selectedContractDocuments.Add(new SelectedDocument(
+                file.Name,
+                bytes,
+                isImage ? $"data:{file.ContentType};base64,{Convert.ToBase64String(bytes)}" : null,
+                isImage));
+            currentCount++;
+        }
+    }
+
+    private void RemoveSelectedContractDocument(SelectedDocument document) => _selectedContractDocuments.Remove(document);
+
+    private void RemoveExistingContractDocument(Guid documentId) => _removedContractDocumentIds.Add(documentId);
+
+    private async Task<List<string>> SaveImagesToDiskAsync(List<SelectedImage> images)
+    {
+        if (images.Count == 0) return new List<string>();
+
+        var urls = new List<string>();
+        foreach (var image in images)
+        {
+            urls.Add(await SaveSingleImageAsync(image.Bytes, image.FileName, "listings"));
+        }
+
+        return urls;
+    }
+
+    private async Task<string> SaveSingleImageAsync(byte[] bytes, string fileName, string subFolder)
+    {
+        var folder = Path.Combine(Env.WebRootPath, "uploads", subFolder);
+        Directory.CreateDirectory(folder);
+
+        var extension = Path.GetExtension(fileName);
+        var savedFileName = $"{Guid.NewGuid()}{extension}";
+        await File.WriteAllBytesAsync(Path.Combine(folder, savedFileName), bytes);
+
+        return $"/uploads/{subFolder}/{savedFileName}";
+    }
+
+    private async Task<List<ContractDocumentUpload>> SaveContractDocumentsToDiskAsync(List<SelectedDocument> documents)
+    {
+        if (documents.Count == 0) return new List<ContractDocumentUpload>();
+
+        var uploads = new List<ContractDocumentUpload>();
+        foreach (var document in documents)
+        {
+            var url = await SaveSingleImageAsync(document.Bytes, document.FileName, "contracts");
+            uploads.Add(new ContractDocumentUpload(url, document.FileName));
+        }
+
+        return uploads;
+    }
+
+    private record SelectedImage(string FileName, byte[] Bytes, string? DataUrl, bool IsVideo);
+
+    // عنصر معاينة موحّد بمعرض الصور/الفيديوهات - يمثّل إما ملف موجود مسبقاً أو ملف جديد لسه ما انحفظ
+    private record MediaTile(string PreviewSource, string FileName, bool IsVideo, bool IsNew, Guid? ExistingImageId, SelectedImage? PendingImage);
+
+    private record SelectedDocument(string FileName, byte[] Bytes, string? DataUrl, bool IsImage);
+
+    private class ListingFormModel
+    {
+        public string Title { get; set; } = string.Empty;
+        public string? Description { get; set; }
+        public PropertyType PropertyType { get; set; } = PropertyType.Apartment;
+        public decimal PriceJod { get; set; }
+        public string Region { get; set; } = string.Empty;
+        public string? PreciseAddress { get; set; }
+        public double? Latitude { get; set; }
+        public double? Longitude { get; set; }
+        public int Bedrooms { get; set; }
+        public int Bathrooms { get; set; }
+        public decimal? AreaSqm { get; set; }
+        public int? Floor { get; set; }
+        public bool IsFurnished { get; set; }
+        public bool HasYard { get; set; }
+        public bool HasBalcony { get; set; }
+        public bool HasElevator { get; set; }
+        public bool HasGarage { get; set; }
+        public WaterMeterType WaterMeterType { get; set; } = WaterMeterType.Separate;
+        public int? WaterCubicMeters { get; set; }
+        public ElectricityMeterType ElectricityMeterType { get; set; } = ElectricityMeterType.Separate;
+        public bool IsElectricitySubsidized { get; set; }
+        public string OwnerPhone { get; set; } = string.Empty;
+        public TenantPreference TenantPreference { get; set; } = TenantPreference.Any;
+        public bool RequiresEmployedTenant { get; set; }
+        public int PaymentIntervalMonths { get; set; } = 1;
+        public SecurityGuaranteeType SecurityGuarantee { get; set; } = SecurityGuaranteeType.None;
+        public decimal? SecurityDepositJod { get; set; }
+        public bool HasRentalContract { get; set; }
+        public string? SourceUrl { get; set; }
+
+        public static ListingFormModel FromDto(ListingDto l) => new()
+        {
+            Title = l.Title,
+            Description = l.Description,
+            PropertyType = l.PropertyType,
+            PriceJod = l.PriceJod,
+            Region = l.Region,
+            PreciseAddress = l.PreciseAddress,
+            Latitude = l.Latitude,
+            Longitude = l.Longitude,
+            Bedrooms = l.Bedrooms,
+            Bathrooms = l.Bathrooms,
+            AreaSqm = l.AreaSqm,
+            Floor = l.Floor,
+            IsFurnished = l.IsFurnished,
+            HasYard = l.HasYard,
+            HasBalcony = l.HasBalcony,
+            HasElevator = l.HasElevator,
+            HasGarage = l.HasGarage,
+            WaterMeterType = l.WaterMeterType,
+            WaterCubicMeters = l.WaterCubicMeters,
+            ElectricityMeterType = l.ElectricityMeterType,
+            IsElectricitySubsidized = l.IsElectricitySubsidized,
+            OwnerPhone = l.OwnerPhone,
+            TenantPreference = l.TenantPreference,
+            RequiresEmployedTenant = l.RequiresEmployedTenant,
+            PaymentIntervalMonths = l.PaymentIntervalMonths,
+            SecurityGuarantee = l.SecurityGuarantee,
+            SecurityDepositJod = l.SecurityDepositJod,
+            HasRentalContract = l.HasRentalContract,
+            SourceUrl = l.SourceUrl,
+        };
+
+        public ListingCreateDto ToCreateDto(List<string> imageUrls, string? ownerId, List<ContractDocumentUpload> contractDocuments) => new(
+            Title, Description, PropertyType, PriceJod, Region, PreciseAddress, Latitude, Longitude,
+            Bedrooms, Bathrooms, AreaSqm, Floor, IsFurnished, HasYard, HasBalcony, HasElevator, HasGarage,
+            WaterMeterType, WaterCubicMeters, ElectricityMeterType, IsElectricitySubsidized,
+            OwnerPhone, TenantPreference, RequiresEmployedTenant, PaymentIntervalMonths,
+            SecurityGuarantee, SecurityDepositJod, HasRentalContract, ownerId, imageUrls, contractDocuments, SourceUrl
+        );
+
+        public ListingUpdateDto ToUpdateDto() => new(
+            Title, Description, PropertyType, PriceJod, Region, PreciseAddress, Latitude, Longitude,
+            Bedrooms, Bathrooms, AreaSqm, Floor, IsFurnished, HasYard, HasBalcony, HasElevator, HasGarage,
+            WaterMeterType, WaterCubicMeters, ElectricityMeterType, IsElectricitySubsidized,
+            OwnerPhone, TenantPreference, RequiresEmployedTenant, PaymentIntervalMonths,
+            SecurityGuarantee, SecurityDepositJod, HasRentalContract, SourceUrl
+        );
+    }
+}

@@ -1,0 +1,88 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@using System.Security.Claims
+@inject NavigationManager Nav
+@inject IUnitOfWork UnitOfWork
+
+<div class="app-shell">
+    <header class="topbar">
+        <div class="brand">
+            <span class="brand-mark">ر</span>
+            <div>
+                <h1>RentConnect</h1>
+                <p class="brand-sub">منصّة البحث عن عقارات الإيجار</p>
+            </div>
+        </div>
+
+        <nav class="main-nav">
+            <NavLink href="/" Match="NavLinkMatch.All">تصفّح الإعلانات</NavLink>
+
+            <AuthorizeView>
+                <Authorized>
+                    <NavLink href="/my-ads">إعلاناتي</NavLink>
+                    <AuthorizeView Roles="Admin" Context="adminContext">
+                        <Authorized>
+                            <NavLink href="/admin/ads">إدارة الإعلانات</NavLink>
+                            <NavLink href="/admin/users">إدارة المستخدمين</NavLink>
+                            <NavLink href="/admin/settings">الإعدادات</NavLink>
+                        </Authorized>
+                        <NotAuthorized>
+                            <NavLink href="/my-bill" class="nav-bill-link">🧾 فاتورتي @(_billTotal > 0 ? $"({_billTotal:N2} د.أ)" : "")</NavLink>
+                        </NotAuthorized>
+                    </AuthorizeView>
+                    <span class="nav-user">👤 @context.User.Identity?.Name</span>
+                    <form method="post" action="/account/logout" class="nav-logout-form">
+                        <button type="submit" class="nav-link-btn">تسجيل الخروج</button>
+                    </form>
+                </Authorized>
+                <NotAuthorized>
+                    <NavLink href="/login">تسجيل الدخول</NavLink>
+                    <NavLink href="/register">إنشاء حساب</NavLink>
+                </NotAuthorized>
+            </AuthorizeView>
+        </nav>
+    </header>
+
+    <main>
+        @Body
+    </main>
+
+    @if (_billTotal > 0 && !_isAdmin)
+    {
+        <button type="button" class="floating-cart" @onclick="GoToBill">
+            <span class="floating-cart-icon">🧾</span>
+            <span class="floating-cart-amount">@_billTotal.ToString("N2") د.أ</span>
+        </button>
+    }
+</div>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthStateTask { get; set; } = default!;
+
+    private decimal _billTotal;
+    private bool _isAdmin;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Nav.LocationChanged += OnLocationChanged;
+        await RefreshBillTotal();
+    }
+
+    private async void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        await RefreshBillTotal();
+        StateHasChanged();
+    }
+
+    private async Task RefreshBillTotal()
+    {
+        var authState = await AuthStateTask;
+        var userId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        _isAdmin = authState.User.IsInRole(RoleNames.Admin);
+        _billTotal = userId is null ? 0 : await UnitOfWork.Billing.GetUnsettledTotalAsync(userId);
+    }
+
+    private void GoToBill() => Nav.NavigateTo("/my-bill");
+
+    public void Dispose() => Nav.LocationChanged -= OnLocationChanged;
+}

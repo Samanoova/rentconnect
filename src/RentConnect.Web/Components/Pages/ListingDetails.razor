@@ -1,0 +1,517 @@
+@page "/listing/{Id:guid}"
+@using System.ComponentModel.DataAnnotations
+@using System.Security.Claims
+@inject IUnitOfWork UnitOfWork
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+
+<a class="back-link" href="/">→ رجوع لكل الإعلانات</a>
+
+@if (_notFound)
+{
+    <p class="empty-state">هذا الإعلان غير موجود أو تمت إزالته.</p>
+}
+else if (_listing is null)
+{
+    <p class="empty-state">جارِ التحميل...</p>
+}
+else
+{
+    <PageTitle>@_listing.Title - RentConnect</PageTitle>
+    <HeadContent>
+        <meta property="og:type" content="website" />
+        <meta property="og:site_name" content="RentConnect" />
+        <meta property="og:locale" content="ar_AR" />
+        <meta property="og:title" content="@_listing.Title" />
+        <meta property="og:description" content="@MetaDescription" />
+        <meta property="og:url" content="@CanonicalUrl" />
+        @if (MetaImageUrl is not null)
+        {
+            <meta property="og:image" content="@MetaImageUrl" />
+            <meta name="twitter:card" content="summary_large_image" />
+            <meta name="twitter:image" content="@MetaImageUrl" />
+        }
+        else
+        {
+            <meta name="twitter:card" content="summary" />
+        }
+        <meta name="twitter:title" content="@_listing.Title" />
+        <meta name="twitter:description" content="@MetaDescription" />
+        <meta name="description" content="@MetaDescription" />
+    </HeadContent>
+
+    <article class="details-page">
+        <div class="details-gallery">
+            @if (_listing.Images.Count > 0)
+            {
+                <div class="gallery-hero">
+                    @if (ListingDisplay.IsVideoFile(_listing.Images[_activeImageIndex].Url))
+                    {
+                        <video src="@_listing.Images[_activeImageIndex].Url" controls></video>
+                    }
+                    else
+                    {
+                        <img src="@_listing.Images[_activeImageIndex].Url" alt="@_listing.Title" class="gallery-hero-zoomable" @onclick="OpenLightbox" />
+                        <span class="gallery-zoom-hint">🔍 اضغط للتكبير</span>
+                    }
+                </div>
+                @if (_listing.Images.Count > 1)
+                {
+                    <div class="gallery-thumbs">
+                        @for (var i = 0; i < _listing.Images.Count; i++)
+                        {
+                            var index = i;
+                            var isVideoThumb = ListingDisplay.IsVideoFile(_listing.Images[index].Url);
+                            <button type="button"
+                                    class="gallery-thumb @(index == _activeImageIndex ? "active" : "")"
+                                    @onclick="() => _activeImageIndex = index">
+                                @if (isVideoThumb)
+                                {
+                                    <video src="@_listing.Images[index].Url" muted preload="metadata"></video>
+                                    <span class="media-type-icon">🎥</span>
+                                }
+                                else
+                                {
+                                    <img src="@_listing.Images[index].Url" alt="" />
+                                }
+                            </button>
+                        }
+                    </div>
+                }
+            }
+            else
+            {
+                <div class="gallery-hero image-placeholder">🏠</div>
+            }
+        </div>
+
+        <div class="details-body">
+            <div class="details-top">
+                <div>
+                    <h2>@_listing.Title</h2>
+                    <span class="badge badge-type">@ListingDisplay.PropertyTypeLabel(_listing.PropertyType)</span>
+                </div>
+                <div class="listing-price details-price">@_listing.PriceJod.ToString("N0") <span>د.أ / @ListingDisplay.PaymentFrequencyLabel(_listing.PaymentIntervalMonths)</span></div>
+            </div>
+
+            <div class="listing-region">📍 @_listing.Region</div>
+
+            <div class="share-row">
+                <a class="btn btn-ghost share-btn" href="@FacebookShareUrl" target="_blank" rel="noopener noreferrer">📘 مشاركة على فيسبوك</a>
+                <a class="btn btn-ghost share-btn" href="@WhatsAppShareUrl" target="_blank" rel="noopener noreferrer">🟢 مشاركة على واتساب</a>
+            </div>
+
+            <div class="details-specs">
+                <div class="spec-item"><span class="spec-value">@_listing.Bedrooms</span><span class="spec-label">غرف نوم</span></div>
+                <div class="spec-item"><span class="spec-value">@_listing.Bathrooms</span><span class="spec-label">حمامات</span></div>
+                @if (_listing.AreaSqm.HasValue)
+                {
+                    <div class="spec-item"><span class="spec-value">@_listing.AreaSqm</span><span class="spec-label">م²</span></div>
+                }
+                @if (_listing.Floor.HasValue)
+                {
+                    <div class="spec-item"><span class="spec-value">@_listing.Floor</span><span class="spec-label">الطابق</span></div>
+                }
+                <div class="spec-item"><span class="spec-value">@(_listing.IsFurnished ? "نعم" : "لا")</span><span class="spec-label">مفروشة</span></div>
+            </div>
+
+            @if (AmenityLabels.Count > 0)
+            {
+                <div class="listing-meta">
+                    @foreach (var amenity in AmenityLabels)
+                    {
+                        <span>@amenity</span>
+                    }
+                </div>
+            }
+
+            <div class="details-section">
+                <h3>المياه والكهرباء</h3>
+                <p>
+                    💧 ساعة المياه @ListingDisplay.WaterMeterTypeLabel(_listing.WaterMeterType)
+                    @if (_listing.WaterCubicMeters.HasValue)
+                    {
+                        <text> - سعة خزان @_listing.WaterCubicMeters م³</text>
+                    }
+                </p>
+                <p>
+                    ⚡ ساعة الكهرباء @ListingDisplay.ElectricityMeterTypeLabel(_listing.ElectricityMeterType)
+                    - @(_listing.IsElectricitySubsidized ? "مدعومة" : "غير مدعومة")
+                </p>
+            </div>
+
+            @if (ConditionLabels.Count > 0)
+            {
+                <div class="details-section conditions-box">
+                    <h3>شروط صاحب العقار</h3>
+                    @foreach (var condition in ConditionLabels)
+                    {
+                        <p>⚑ @condition</p>
+                    }
+                </div>
+            }
+
+            @if (SecurityGuaranteeLabel is not null || _listing.HasRentalContract)
+            {
+                <div class="details-section">
+                    <h3>عقد الإيجار</h3>
+                    @if (SecurityGuaranteeLabel is not null)
+                    {
+                        <p>📝 @SecurityGuaranteeLabel</p>
+                    }
+                    @if (_listing.SecurityGuarantee == SecurityGuaranteeType.SecurityDeposit && _listing.SecurityDepositJod.HasValue)
+                    {
+                        <p>💰 مبلغ التأمين: @_listing.SecurityDepositJod.Value.ToString("N0") د.أ</p>
+                    }
+                    @if (_listing.HasRentalContract)
+                    {
+                        <p>📄 يوجد عقد إيجار رسمي</p>
+                    }
+                    @if (_listing.ContractDocuments.Count > 0)
+                    {
+                        <div class="image-preview-grid contract-docs-grid">
+                            @foreach (var doc in _listing.ContractDocuments)
+                            {
+                                <div class="image-preview">
+                                    @if (ListingDisplay.IsImageFile(doc.FileName))
+                                    {
+                                        <img src="@doc.Url" alt="@doc.FileName" />
+                                    }
+                                    else
+                                    {
+                                        <a href="@doc.Url" target="_blank" class="file-chip">📄<span>@doc.FileName</span></a>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(_listing.Description))
+            {
+                <div class="details-section">
+                    <h3>الوصف</h3>
+                    <p>@_listing.Description</p>
+                </div>
+            }
+
+            <p class="freshness-label">آخر تأكيد لتوفر العقار: منذ @DaysSince @(DaysSince == 1 ? "يوم" : "أيام")</p>
+
+            @if (!string.IsNullOrWhiteSpace(_listing.SourceUrl))
+            {
+                <a class="source-link" href="@_listing.SourceUrl" target="_blank" rel="noopener noreferrer">🔗 عرض المصدر الأصلي للإعلان</a>
+            }
+
+            @if (_phoneRevealed)
+            {
+                <div class="contact-reveal">
+                    <a class="btn btn-primary btn-call btn-call-lg" href="tel:@_listing.OwnerPhone">📞 @_listing.OwnerPhone</a>
+
+                    @if (_listing.Latitude.HasValue && _listing.Longitude.HasValue)
+                    {
+                        <div class="details-section contact-map-section">
+                            <h3>📍 موقع العقار</h3>
+                            <div id="@MapElementId" class="map-box details-map-box"></div>
+                            <a class="btn btn-ghost btn-gmaps" href="@GoogleMapsUrl" target="_blank" rel="noopener noreferrer">🗺 فتح في خرائط جوجل</a>
+                        </div>
+                    }
+                </div>
+            }
+            else if (_currentUserId is not null)
+            {
+                <button type="button" class="btn btn-primary btn-call btn-call-lg" @onclick="RevealPhone">📞📍 إظهار الرقم والموقع</button>
+                @if (WillBeCharged)
+                {
+                    <p class="wizard-hint">💳 سيُضاف مبلغ @_revealFeeJod.ToString("N2") د.أ إلى فاتورتك عند إظهار هذا الرقم لأول مرة.</p>
+                }
+            }
+            else
+            {
+                <p class="wizard-hint"><a href="/login">سجّل الدخول</a> لإظهار رقم التواصل وموقع العقار.</p>
+            }
+        </div>
+
+        <div class="details-section comments-section">
+            <h3>💬 التعليقات <span class="comments-count-badge">@_comments.Count</span></h3>
+
+            @if (_comments.Count == 0)
+            {
+                <div class="comments-empty">
+                    <span class="comments-empty-icon">💬</span>
+                    <p>لا توجد تعليقات بعد - كن أول من يعلّق.</p>
+                </div>
+            }
+            else
+            {
+                <div class="comments-list">
+                    @foreach (var comment in _comments)
+                    {
+                        <div class="comment-item">
+                            <div class="comment-avatar" style="background:@AuthorColor(comment.AuthorDisplayName)">@AuthorInitial(comment.AuthorDisplayName)</div>
+                            <div class="comment-body">
+                                <div class="comment-meta">
+                                    <span class="comment-author">@comment.AuthorDisplayName</span>
+                                    <span class="comment-date">@RelativeTime(comment.CreatedAt)</span>
+                                </div>
+                                <p class="comment-content">@comment.Content</p>
+                                @if (CanDeleteComment(comment))
+                                {
+                                    <button type="button" class="comment-delete" @onclick="() => DeleteComment(comment.Id)">🗑 حذف</button>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+
+            <AuthorizeView Context="authContext">
+                <Authorized>
+                    <EditForm Model="_newComment" OnValidSubmit="SubmitComment" class="comment-form">
+                        <DataAnnotationsValidator />
+                        <InputTextArea @bind-Value="_newComment.Content" rows="2" placeholder="اكتب تعليقك..." />
+                        @if (_commentError is not null)
+                        {
+                            <p class="form-error">@_commentError</p>
+                        }
+                        <button type="submit" class="btn btn-primary comment-submit">📨 إرسال التعليق</button>
+                    </EditForm>
+                </Authorized>
+                <NotAuthorized>
+                    <p class="wizard-hint"><a href="/login">سجّل الدخول</a> لإضافة تعليق.</p>
+                </NotAuthorized>
+            </AuthorizeView>
+        </div>
+    </article>
+
+    @if (_lightboxOpen)
+    {
+        <div class="lightbox-overlay" @onclick="CloseLightbox" @onkeydown="HandleLightboxKeydown">
+            <button type="button" class="lightbox-close" autofocus @onclick="CloseLightbox" @onclick:stopPropagation="true" aria-label="إغلاق">×</button>
+
+            @if (_listing.Images.Count > 1)
+            {
+                <button type="button" class="lightbox-nav lightbox-prev" @onclick="ShowPreviousLightboxImage" @onclick:stopPropagation="true" aria-label="السابق">‹</button>
+            }
+
+            <div class="lightbox-content" @onclick:stopPropagation="true">
+                @if (ListingDisplay.IsVideoFile(_listing.Images[_activeImageIndex].Url))
+                {
+                    <video src="@_listing.Images[_activeImageIndex].Url" controls autoplay></video>
+                }
+                else
+                {
+                    <img src="@_listing.Images[_activeImageIndex].Url" alt="@_listing.Title" />
+                }
+            </div>
+
+            @if (_listing.Images.Count > 1)
+            {
+                <button type="button" class="lightbox-nav lightbox-next" @onclick="ShowNextLightboxImage" @onclick:stopPropagation="true" aria-label="التالي">›</button>
+                <span class="lightbox-counter">@(_activeImageIndex + 1) / @_listing.Images.Count</span>
+            }
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    [CascadingParameter] private Task<AuthenticationState> AuthStateTask { get; set; } = default!;
+
+    private ListingDto? _listing;
+    private bool _notFound;
+    private int _activeImageIndex;
+    private Guid? _viewCountedFor;
+
+    private bool _phoneRevealed;
+    private bool _lightboxOpen;
+    private bool _mapInitialized;
+
+    private string MapElementId => $"detail-map-{_listing?.Id}";
+
+    private string CanonicalUrl => _listing is null ? Nav.BaseUri : $"{Nav.BaseUri.TrimEnd('/')}/listing/{_listing.Id}";
+
+    // بيفضّل أول صورة فعلية (مش فيديو) كصورة المشاركة/المعاينة - وبيحوّلها لرابط مطلق لأن روبوتات
+    // فيسبوك/واتساب بتجيب الصورة مباشرة من الرابط بدون تشغيل جافاسكريبت
+    private string? MetaImageUrl
+    {
+        get
+        {
+            if (_listing is null) return null;
+            var firstImage = _listing.Images.FirstOrDefault(i => !ListingDisplay.IsVideoFile(i.Url));
+            return firstImage is null ? null : $"{Nav.BaseUri.TrimEnd('/')}{firstImage.Url}";
+        }
+    }
+
+    private string MetaDescription => _listing is null ? string.Empty
+        : $"{_listing.PriceJod.ToString("N0")} د.أ / {ListingDisplay.PaymentFrequencyLabel(_listing.PaymentIntervalMonths)} - {_listing.Region} - {_listing.Bedrooms} غرف نوم";
+
+    private string FacebookShareUrl => $"https://www.facebook.com/sharer/sharer.php?u={Uri.EscapeDataString(CanonicalUrl)}";
+
+    private string WhatsAppShareUrl => _listing is null ? "#"
+        : $"https://wa.me/?text={Uri.EscapeDataString($"{_listing.Title} - {CanonicalUrl}")}";
+
+    private string? GoogleMapsUrl => _listing?.Latitude is double lat && _listing?.Longitude is double lng
+        ? $"https://www.google.com/maps/search/?api=1&query={lat.ToString(System.Globalization.CultureInfo.InvariantCulture)},{lng.ToString(System.Globalization.CultureInfo.InvariantCulture)}"
+        : null;
+
+    private List<ListingCommentDto> _comments = new();
+    private CommentModel _newComment = new();
+    private string? _commentError;
+    private string? _currentUserId;
+    private bool _isAdmin;
+
+    private decimal _revealFeeJod;
+    private bool _alreadyCharged;
+
+    private bool WillBeCharged => _revealFeeJod > 0 && !_isAdmin && _listing?.OwnerId != _currentUserId && !_alreadyCharged;
+
+    private int DaysSince => _listing is null ? 0 : (int)(DateTime.UtcNow - _listing.LastConfirmedAt).TotalDays;
+
+    private List<string> ConditionLabels => _listing is null ? new() : ListingDisplay.ConditionLabels(_listing).ToList();
+
+    private List<string> AmenityLabels => _listing is null ? new() : ListingDisplay.AmenityLabels(_listing).ToList();
+
+    private string? SecurityGuaranteeLabel => _listing is null ? null : ListingDisplay.SecurityGuaranteeLabel(_listing.SecurityGuarantee);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _activeImageIndex = 0;
+        _phoneRevealed = false;
+        _lightboxOpen = false;
+        _mapInitialized = false;
+        _listing = await UnitOfWork.Listings.GetByIdAsync(Id);
+        _notFound = _listing is null;
+
+        var authState = await AuthStateTask;
+        _currentUserId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        _isAdmin = authState.User.IsInRole(RoleNames.Admin);
+
+        var settings = await UnitOfWork.Settings.GetAsync();
+        _revealFeeJod = settings.PhoneRevealFeeJod;
+        _alreadyCharged = _currentUserId is not null && await UnitOfWork.Billing.HasChargedAsync(_currentUserId, Id);
+
+        if (_listing is null) return;
+
+        _comments = await UnitOfWork.Listings.GetCommentsAsync(Id);
+
+        if (_viewCountedFor != Id)
+        {
+            _viewCountedFor = Id;
+            await UnitOfWork.Listings.IncrementViewCountAsync(Id);
+            await UnitOfWork.CompleteAsync();
+        }
+    }
+
+    private async Task RevealPhone()
+    {
+        if (_phoneRevealed || _listing is null || _currentUserId is null) return;
+
+        _phoneRevealed = true;
+        await UnitOfWork.Listings.IncrementPhoneRevealCountAsync(_listing.Id);
+
+        if (!_isAdmin && _listing.OwnerId != _currentUserId && _revealFeeJod > 0)
+        {
+            if (await UnitOfWork.Billing.ChargeForRevealAsync(_currentUserId, _listing.Id, _revealFeeJod))
+            {
+                _alreadyCharged = true;
+            }
+        }
+
+        await UnitOfWork.CompleteAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_phoneRevealed && !_mapInitialized && _listing?.Latitude is double lat && _listing?.Longitude is double lng)
+        {
+            _mapInitialized = true;
+            await JS.InvokeVoidAsync("locationPicker.initReadOnly", MapElementId, lat, lng);
+        }
+    }
+
+    private bool CanDeleteComment(ListingCommentDto comment) => _isAdmin || comment.AuthorId == _currentUserId;
+
+    private void OpenLightbox() => _lightboxOpen = true;
+
+    private void CloseLightbox() => _lightboxOpen = false;
+
+    private void ShowNextLightboxImage()
+    {
+        if (_listing is null || _listing.Images.Count == 0) return;
+        _activeImageIndex = (_activeImageIndex + 1) % _listing.Images.Count;
+    }
+
+    private void ShowPreviousLightboxImage()
+    {
+        if (_listing is null || _listing.Images.Count == 0) return;
+        _activeImageIndex = (_activeImageIndex - 1 + _listing.Images.Count) % _listing.Images.Count;
+    }
+
+    private void HandleLightboxKeydown(KeyboardEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case "Escape": CloseLightbox(); break;
+            case "ArrowRight": ShowNextLightboxImage(); break;
+            case "ArrowLeft": ShowPreviousLightboxImage(); break;
+        }
+    }
+
+    private static readonly string[] AvatarColors = ["#A8583D", "#5C6B47", "#B9812F", "#7E4029", "#414D33", "#6E6A5F"];
+
+    private static string AuthorInitial(string name) =>
+        string.IsNullOrWhiteSpace(name) ? "?" : name.Trim()[0].ToString().ToUpperInvariant();
+
+    private static string AuthorColor(string name)
+    {
+        var index = Math.Abs((name ?? string.Empty).GetHashCode()) % AvatarColors.Length;
+        return AvatarColors[index];
+    }
+
+    private static string RelativeTime(DateTime utc)
+    {
+        var span = DateTime.UtcNow - utc;
+
+        if (span.TotalMinutes < 1) return "الآن";
+        if (span.TotalMinutes < 60) return $"منذ {(int)span.TotalMinutes} {((int)span.TotalMinutes == 1 ? "دقيقة" : "دقائق")}";
+        if (span.TotalHours < 24) return $"منذ {(int)span.TotalHours} {((int)span.TotalHours == 1 ? "ساعة" : "ساعات")}";
+        if (span.TotalDays < 30) return $"منذ {(int)span.TotalDays} {((int)span.TotalDays == 1 ? "يوم" : "أيام")}";
+
+        return utc.ToString("yyyy-MM-dd");
+    }
+
+    private async Task SubmitComment()
+    {
+        _commentError = null;
+
+        if (_listing is null || string.IsNullOrWhiteSpace(_newComment.Content) || _currentUserId is null)
+        {
+            _commentError = "الرجاء كتابة تعليق قبل الإرسال.";
+            return;
+        }
+
+        var authState = await AuthStateTask;
+        var displayName = authState.User.Identity?.Name ?? "مستخدم";
+
+        await UnitOfWork.Listings.AddCommentAsync(_listing.Id, _currentUserId, displayName, _newComment.Content.Trim());
+        await UnitOfWork.CompleteAsync();
+
+        _newComment = new CommentModel();
+        _comments = await UnitOfWork.Listings.GetCommentsAsync(Id);
+    }
+
+    private async Task DeleteComment(Guid commentId)
+    {
+        await UnitOfWork.Listings.DeleteCommentAsync(commentId);
+        await UnitOfWork.CompleteAsync();
+        _comments = await UnitOfWork.Listings.GetCommentsAsync(Id);
+    }
+
+    private class CommentModel
+    {
+        [Required(ErrorMessage = "الرجاء كتابة تعليق قبل الإرسال.")]
+        public string Content { get; set; } = string.Empty;
+    }
+}

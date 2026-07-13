@@ -1,0 +1,139 @@
+@page "/my-ads"
+@attribute [Authorize]
+@using System.Security.Claims
+@inject IUnitOfWork UnitOfWork
+
+<section class="page-header">
+    <h2>إعلاناتي</h2>
+    <p>إدارة عقاراتك — إضافة، تعديل، وتحديث حالة إعلاناتك الخاصة.</p>
+</section>
+
+<section class="stats-row">
+    <div class="stat-card">
+        <span class="stat-icon">📋</span>
+        <span class="stat-value">@_listings.Count</span>
+        <span class="stat-label">إجمالي الإعلانات</span>
+    </div>
+    <div class="stat-card stat-good">
+        <span class="stat-icon">✅</span>
+        <span class="stat-value">@_listings.Count(l => l.Status == ListingStatus.Available)</span>
+        <span class="stat-label">متوفرة الآن</span>
+    </div>
+    <div class="stat-card stat-warn">
+        <span class="stat-icon">⏰</span>
+        <span class="stat-value">@_staleCount</span>
+        <span class="stat-label">تحتاج تأكيد (7+ أيام)</span>
+    </div>
+    <div class="stat-card stat-bad">
+        <span class="stat-icon">🔑</span>
+        <span class="stat-value">@_listings.Count(l => l.Status == ListingStatus.Rented)</span>
+        <span class="stat-label">متأجّرة</span>
+    </div>
+</section>
+
+@if (_staleCount > 0)
+{
+    <div class="stale-banner">
+        <span class="stale-icon">⚠</span>
+        <span>يوجد @_staleCount إعلان لم يتم تأكيد توفره منذ 7 أيام أو أكثر — راجعها قبل ما يستمر المستخدمون بالدفع للتواصل بخصوصها.</span>
+    </div>
+}
+
+<section class="toolbar">
+    <div class="filters">
+        <input @bind="_filterRegion" @bind:event="oninput" @bind:after="Reload" placeholder="فلترة حسب المنطقة..." />
+        <select @bind="_filterStatus" @bind:after="Reload">
+            <option value="">كل الحالات</option>
+            <option value="Available">متوفر</option>
+            <option value="Rented">متأجّر</option>
+            <option value="Suspended">معلّق</option>
+        </select>
+    </div>
+    <button class="btn btn-primary" @onclick="OpenAdd">+ إعلان جديد</button>
+</section>
+
+@if (_listings.Count == 0)
+{
+    <p class="empty-state">لا توجد إعلانات مطابقة. جرّب تعديل الفلترة أو أضف إعلاناً جديداً.</p>
+}
+else
+{
+    <section class="listings-grid">
+        @foreach (var listing in _listings)
+        {
+            <ListingCard Listing="listing"
+                         OnStatusChange="HandleStatusChange"
+                         OnEdit="OpenEdit"
+                         OnDelete="HandleDelete" />
+        }
+    </section>
+}
+
+<ListingFormModal IsOpen="_showModal" EditingId="_editingId" OwnerId="@_currentUserId" OnClose="CloseModal" OnSaved="Reload" />
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthStateTask { get; set; } = default!;
+
+    private string? _currentUserId;
+    private List<ListingDto> _listings = new();
+    private string _filterRegion = string.Empty;
+    private string _filterStatus = string.Empty;
+    private int _staleCount;
+
+    private bool _showModal;
+    private Guid? _editingId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateTask;
+        _currentUserId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        await Reload();
+    }
+
+    private async Task Reload()
+    {
+        ListingStatus? status = string.IsNullOrEmpty(_filterStatus)
+            ? null
+            : Enum.Parse<ListingStatus>(_filterStatus);
+
+        _listings = await UnitOfWork.Listings.GetAllAsync(
+            string.IsNullOrWhiteSpace(_filterRegion) ? null : _filterRegion,
+            status,
+            ownerId: _currentUserId);
+
+        var stale = await UnitOfWork.Listings.GetStaleAsync(7, _currentUserId);
+        _staleCount = stale.Count;
+    }
+
+    private void OpenAdd()
+    {
+        _editingId = null;
+        _showModal = true;
+    }
+
+    private void OpenEdit(Guid id)
+    {
+        _editingId = id;
+        _showModal = true;
+    }
+
+    private async Task CloseModal()
+    {
+        _showModal = false;
+        await Task.CompletedTask;
+    }
+
+    private async Task HandleStatusChange((Guid Id, ListingStatus NewStatus) change)
+    {
+        await UnitOfWork.Listings.UpdateStatusAsync(change.Id, change.NewStatus);
+        await UnitOfWork.CompleteAsync();
+        await Reload();
+    }
+
+    private async Task HandleDelete(Guid id)
+    {
+        await UnitOfWork.Listings.DeleteAsync(id);
+        await UnitOfWork.CompleteAsync();
+        await Reload();
+    }
+}

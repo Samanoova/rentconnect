@@ -1,0 +1,308 @@
+@page "/admin/settings"
+@attribute [Authorize(Roles = RoleNames.Admin)]
+@using RentConnect.Web.Services
+@inject IUnitOfWork UnitOfWork
+@inject IEvolutionApiClient EvoClient
+
+<section class="page-header">
+    <h2>إعدادات المنصّة</h2>
+    <p>حدّد رسم إظهار رقم التواصل، وبيانات حساب CliQ اللي بيحوّل عليه المستخدمون مستحقاتهم.</p>
+</section>
+
+<EditForm Model="_model" OnValidSubmit="Save" class="settings-form">
+    <DataAnnotationsValidator />
+
+    <label>رسم إظهار رقم التواصل (دينار)</label>
+    <InputNumber @bind-Value="_model.PhoneRevealFeeJod" step="0.10" min="0" />
+    <p class="wizard-hint">يُضاف هذا المبلغ لفاتورة المستخدم في أول مرة يظهر فيها رقم تواصل أي إعلان. اتركه 0 لتعطيل الفوترة كلياً.</p>
+
+    <label>معرّف/رقم CliQ</label>
+    <InputText @bind-Value="_model.CliqAlias" placeholder="مثلاً: mosab أو 07XXXXXXXX" />
+
+    <label>اسم صاحب الحساب</label>
+    <InputText @bind-Value="_model.CliqAccountName" placeholder="الاسم اللي بيظهر عند التحويل" />
+    <p class="wizard-hint">تُعرض هذه البيانات للمستخدم عند الضغط على "ادفع الآن" في صفحة فاتورته.</p>
+
+    <hr />
+
+    <label>رابط Evolution API</label>
+    <InputText @bind-Value="_model.EvolutionApiBaseUrl" placeholder="http://localhost:8090" />
+
+    <label>API Key</label>
+    <InputText @bind-Value="_model.EvolutionApiKey" placeholder="Global API Key" />
+    <p class="wizard-hint">تُستخدم لإرسال رمز التحقق (OTP) عبر واتساب عند إنشاء حساب جديد.</p>
+
+    <hr />
+
+    <label class="checkbox-row">
+        <InputCheckbox @bind-Value="_model.AvailabilityCheckEnabled" />
+        تفعيل التحقق الدوري من توفر الإعلانات عبر واتساب
+    </label>
+
+    <label>تحقّق كل كم يوم؟</label>
+    <InputNumber @bind-Value="_model.AvailabilityCheckIntervalDays" min="1" disabled="@(!_model.AvailabilityCheckEnabled)" />
+    <p class="wizard-hint">كل هذا العدد من الأيام، بيتبعت سؤال واتساب تلقائي لصاحب أي إعلان متوفر ما تأكّد توفره خلال هذه المدة، للتأكد إنه لسا متاح أو تم تأجيره.</p>
+
+    @if (_savedMessage is not null)
+    {
+        <p class="form-success">@_savedMessage</p>
+    }
+
+    <button type="submit" class="btn btn-primary">حفظ الإعدادات</button>
+</EditForm>
+
+<section class="page-header instance-manager-header">
+    <h2>📱 إدارة Instances (واتساب)</h2>
+    <p>يعمل بالقيم المكتوبة أعلاه مباشرة (حتى لو ما ضغطت "حفظ" بعد) - اضغط "تحديث" لتجربتها.</p>
+</section>
+
+<div class="instance-toolbar">
+    <button type="button" class="btn btn-ghost" @onclick="RefreshInstances" disabled="@_isBusy">
+        @(_isLoadingInstances ? "جارِ التحديث..." : "🔄 تحديث القائمة")
+    </button>
+    <input @bind="_newInstanceName" @bind:event="oninput" placeholder="اسم instance جديدة" />
+    <button type="button" class="btn btn-primary" @onclick="CreateInstance" disabled="@(_isBusy || string.IsNullOrWhiteSpace(_newInstanceName))">
+        ➕ إنشاء
+    </button>
+</div>
+
+@if (_instanceError is not null)
+{
+    <p class="form-error">@_instanceError</p>
+}
+
+@if (_instances.Count == 0)
+{
+    <p class="empty-state">لا توجد instances بعد - أنشئ واحدة أو اضغط "تحديث".</p>
+}
+else
+{
+    <div class="admin-table-wrap">
+        <table class="admin-table">
+            <thead>
+                <tr>
+                    <th>الاسم</th>
+                    <th>الحالة</th>
+                    <th>الرقم المتصل</th>
+                    <th>للتحقق (OTP)</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var instance in _instances)
+                {
+                    <tr>
+                        <td>@instance.Name</td>
+                        <td>
+                            @if (instance.ConnectionStatus == "open")
+                            {
+                                <span class="badge badge-available">متصلة</span>
+                            }
+                            else
+                            {
+                                <span class="badge badge-suspended">@instance.ConnectionStatus</span>
+                            }
+                        </td>
+                        <td>@(instance.OwnerNumber ?? "—")</td>
+                        <td>
+                            @if (_model.EvolutionApiInstanceName == instance.Name)
+                            {
+                                <span class="badge badge-available">✓ مستخدمة</span>
+                            }
+                            else
+                            {
+                                <button type="button" class="link-btn" @onclick="() => UseForOtp(instance.Name)">استخدم للتحقق</button>
+                            }
+                        </td>
+                        <td class="admin-actions">
+                            @if (instance.ConnectionStatus != "open")
+                            {
+                                <button type="button" class="link-btn" @onclick="() => ShowQr(instance.Name)" disabled="@_isBusy">📷 QR</button>
+                            }
+                            <button type="button" class="link-btn danger" @onclick="() => DeleteInstance(instance.Name)" disabled="@_isBusy">حذف</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@if (_qrCodeBase64 is not null)
+{
+    <div class="qr-box">
+        <p>امسح الرمز من واتساب ← الأجهزة المرتبطة:</p>
+        <img src="@_qrCodeBase64" alt="QR Code" />
+        <button type="button" class="btn btn-ghost" @onclick="() => _qrCodeBase64 = null">إغلاق</button>
+    </div>
+}
+
+@code {
+    private SettingsModel _model = new();
+    private string? _savedMessage;
+
+    private List<EvolutionInstanceInfo> _instances = new();
+    private bool _isLoadingInstances;
+    private bool _isBusy;
+    private string _newInstanceName = string.Empty;
+    private string? _qrCodeBase64;
+    private string? _instanceError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var settings = await UnitOfWork.Settings.GetAsync();
+        _model = new SettingsModel
+        {
+            PhoneRevealFeeJod = settings.PhoneRevealFeeJod,
+            CliqAlias = settings.CliqAlias,
+            CliqAccountName = settings.CliqAccountName,
+            EvolutionApiBaseUrl = settings.EvolutionApiBaseUrl,
+            EvolutionApiKey = settings.EvolutionApiKey,
+            EvolutionApiInstanceName = settings.EvolutionApiInstanceName,
+            AvailabilityCheckEnabled = settings.AvailabilityCheckEnabled,
+            AvailabilityCheckIntervalDays = settings.AvailabilityCheckIntervalDays,
+        };
+
+        if (!string.IsNullOrWhiteSpace(_model.EvolutionApiBaseUrl) && !string.IsNullOrWhiteSpace(_model.EvolutionApiKey))
+        {
+            await RefreshInstances();
+        }
+    }
+
+    private async Task Save()
+    {
+        await UnitOfWork.Settings.UpdateAsync(new SiteSettingUpdateDto(
+            _model.PhoneRevealFeeJod,
+            _model.CliqAlias,
+            _model.CliqAccountName,
+            _model.EvolutionApiBaseUrl,
+            _model.EvolutionApiKey,
+            _model.EvolutionApiInstanceName,
+            _model.AvailabilityCheckEnabled,
+            _model.AvailabilityCheckIntervalDays));
+        await UnitOfWork.CompleteAsync();
+        _savedMessage = "تم حفظ الإعدادات بنجاح.";
+    }
+
+    private bool HasEvolutionConfig => !string.IsNullOrWhiteSpace(_model.EvolutionApiBaseUrl) && !string.IsNullOrWhiteSpace(_model.EvolutionApiKey);
+
+    private async Task RefreshInstances()
+    {
+        _instanceError = null;
+
+        if (!HasEvolutionConfig)
+        {
+            _instanceError = "الرجاء إدخال رابط Evolution API والـ API Key أولاً.";
+            return;
+        }
+
+        _isLoadingInstances = true;
+        _isBusy = true;
+
+        var (success, instances, error) = await EvoClient.ListInstancesAsync(_model.EvolutionApiBaseUrl!, _model.EvolutionApiKey!);
+        if (success)
+        {
+            _instances = instances;
+        }
+        else
+        {
+            _instanceError = $"تعذّر جلب قائمة الـ instances: {error}";
+        }
+
+        _isLoadingInstances = false;
+        _isBusy = false;
+    }
+
+    private async Task CreateInstance()
+    {
+        if (!HasEvolutionConfig || string.IsNullOrWhiteSpace(_newInstanceName)) return;
+
+        _instanceError = null;
+        _isBusy = true;
+
+        var (success, qr, error) = await EvoClient.CreateInstanceAsync(_model.EvolutionApiBaseUrl!, _model.EvolutionApiKey!, _newInstanceName.Trim());
+        if (success)
+        {
+            _qrCodeBase64 = qr;
+            _newInstanceName = string.Empty;
+            await RefreshInstances();
+        }
+        else
+        {
+            _instanceError = $"تعذّر إنشاء الـ instance: {error}";
+        }
+
+        _isBusy = false;
+    }
+
+    private async Task ShowQr(string instanceName)
+    {
+        if (!HasEvolutionConfig) return;
+
+        _instanceError = null;
+        _isBusy = true;
+
+        var (success, qr, error) = await EvoClient.GetQrCodeAsync(_model.EvolutionApiBaseUrl!, _model.EvolutionApiKey!, instanceName);
+        if (success && qr is not null)
+        {
+            _qrCodeBase64 = qr;
+        }
+        else
+        {
+            _instanceError = error ?? "تعذّر جلب رمز QR.";
+        }
+
+        _isBusy = false;
+    }
+
+    private async Task DeleteInstance(string instanceName)
+    {
+        if (!HasEvolutionConfig) return;
+
+        _instanceError = null;
+        _isBusy = true;
+
+        var (success, error) = await EvoClient.DeleteInstanceAsync(_model.EvolutionApiBaseUrl!, _model.EvolutionApiKey!, instanceName);
+        if (success)
+        {
+            await RefreshInstances();
+        }
+        else
+        {
+            _instanceError = $"تعذّر حذف الـ instance: {error}";
+        }
+
+        _isBusy = false;
+    }
+
+    private async Task UseForOtp(string instanceName)
+    {
+        _model.EvolutionApiInstanceName = instanceName;
+
+        // حفظ فوري بدل الاعتماد على زر "حفظ الإعدادات" المنفصل - حتى ما يضيع الاختيار لو المستخدم غادر الصفحة
+        await UnitOfWork.Settings.UpdateAsync(new SiteSettingUpdateDto(
+            _model.PhoneRevealFeeJod,
+            _model.CliqAlias,
+            _model.CliqAccountName,
+            _model.EvolutionApiBaseUrl,
+            _model.EvolutionApiKey,
+            _model.EvolutionApiInstanceName,
+            _model.AvailabilityCheckEnabled,
+            _model.AvailabilityCheckIntervalDays));
+        await UnitOfWork.CompleteAsync();
+
+        _savedMessage = $"تم اختيار \"{instanceName}\" للتحقق وحفظه.";
+    }
+
+    private class SettingsModel
+    {
+        public decimal PhoneRevealFeeJod { get; set; }
+        public string? CliqAlias { get; set; }
+        public string? CliqAccountName { get; set; }
+        public string? EvolutionApiBaseUrl { get; set; }
+        public string? EvolutionApiKey { get; set; }
+        public string? EvolutionApiInstanceName { get; set; }
+        public bool AvailabilityCheckEnabled { get; set; }
+        public int? AvailabilityCheckIntervalDays { get; set; }
+    }
+}

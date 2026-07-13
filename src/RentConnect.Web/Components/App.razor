@@ -1,0 +1,21 @@
+@using Microsoft.AspNetCore.Components.Web
+@using RentConnect.Web.Infrastructure
+@inject IWebHostEnvironment Env
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="css/app.css?v=@AssetVersion.Get(Env, "css/app.css")" />
+    <HeadOutlet />
+</head>
+<body>
+    <Routes @rendermode="InteractiveServer" />
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="js/locationPicker.js?v=@AssetVersion.Get(Env, "js/locationPicker.js")"></script>
+    <script src="_framework/blazor.web.js"></script>
+</body>
+</html>

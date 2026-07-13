@@ -1,0 +1,182 @@
+@page "/my-bill"
+@attribute [Authorize]
+@using System.Security.Claims
+@using RentConnect.Web.Services
+@inject IUnitOfWork UnitOfWork
+@inject IListingAvailabilityChecker AvailabilityChecker
+
+<section class="page-header">
+    <h2>🧾 فاتورتي</h2>
+    <p>كل مرة تظهر فيها رقم تواصل إعلان لأول مرة، بينضاف رسم بسيط لهذه الفاتورة.</p>
+</section>
+
+@if (_charges.Count == 0)
+{
+    <p class="empty-state">ما عندك أي مستحقات حالياً - لسا ما ظهرت أي رقم تواصل 🎉</p>
+}
+else
+{
+    <div class="bill-summary">
+        <span>الإجمالي المستحق حالياً</span>
+        <span class="bill-total">@_unsettledTotal.ToString("N2") د.أ</span>
+    </div>
+
+    <p class="wizard-hint">
+        يمكنك إلغاء عنصر إذا تبيّن أن العقار كان مؤجر عند الاتصال بصاحبه (بحد أقصى @MaxCancellationsPerDay مرات باليوم - استخدمت @_cancelledToday من @MaxCancellationsPerDay اليوم).
+    </p>
+
+    @if (_cancelError is not null)
+    {
+        <p class="form-error">@_cancelError</p>
+    }
+
+    <div class="admin-table-wrap bill-table-wrap">
+        <table class="admin-table">
+            <thead>
+                <tr>
+                    <th>الإعلان</th>
+                    <th>التاريخ</th>
+                    <th>المبلغ</th>
+                    <th>الحالة</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var charge in _charges)
+                {
+                    <tr class="@(charge.IsSettled || charge.IsCancelled ? "bill-row-settled" : "")">
+                        <td><a href="/listing/@charge.ListingId">@charge.ListingTitle</a></td>
+                        <td>@charge.CreatedAt.ToString("yyyy-MM-dd")</td>
+                        <td>@charge.AmountJod.ToString("N2") د.أ</td>
+                        <td>
+                            @if (charge.IsSettled)
+                            {
+                                <span class="badge badge-available">مدفوع</span>
+                            }
+                            else if (charge.IsCancelled)
+                            {
+                                <span class="badge badge-rented">ملغى</span>
+                            }
+                            else
+                            {
+                                <span class="badge badge-suspended">غير مدفوع</span>
+                            }
+                        </td>
+                        <td>
+                            @if (!charge.IsSettled && !charge.IsCancelled)
+                            {
+                                <button type="button" class="link-btn danger" disabled="@(_isCancelling || _cancelledToday >= MaxCancellationsPerDay)"
+                                        @onclick="() => CancelCharge(charge.Id)">
+                                    إلغاء (كان مؤجر)
+                                </button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <div class="bill-actions">
+        @if (_unsettledTotal > 0)
+        {
+            @if (!_showPaymentInfo)
+            {
+                <button type="button" class="btn btn-primary" @onclick="() => _showPaymentInfo = true">💳 ادفع الآن</button>
+            }
+            else if (string.IsNullOrWhiteSpace(_cliqAlias))
+            {
+                <p class="wizard-hint">لم يتم تحديد بيانات الدفع بعد من الإدارة - الرجاء التواصل معهم مباشرة.</p>
+            }
+            else
+            {
+                <div class="cliq-box">
+                    <h3>حوّل عبر CliQ</h3>
+                    <p>افتح تطبيق البنك ← CliQ ← وحوّل المبلغ التالي:</p>
+                    <div class="cliq-detail"><span>المبلغ</span><strong>@_unsettledTotal.ToString("N2") د.أ</strong></div>
+                    <div class="cliq-detail"><span>معرّف CliQ</span><strong>@_cliqAlias</strong></div>
+                    @if (!string.IsNullOrWhiteSpace(_cliqAccountName))
+                    {
+                        <div class="cliq-detail"><span>اسم الحساب</span><strong>@_cliqAccountName</strong></div>
+                    }
+                    <p class="wizard-hint">بعد التحويل، رح تتأكّد الإدارة من استلام المبلغ ويتم تصفير الفاتورة.</p>
+                </div>
+            }
+        }
+    </div>
+}
+
+@code {
+    // لازم تبقى مطابقة للحد المُطبّق فعلياً بـ BillingRepository.CancelChargeAsync
+    private const int MaxCancellationsPerDay = 5;
+
+    [CascadingParameter] private Task<AuthenticationState> AuthStateTask { get; set; } = default!;
+
+    private string? _userId;
+    private List<PhoneRevealChargeDto> _charges = new();
+    private decimal _unsettledTotal;
+    private int _cancelledToday;
+    private string? _cliqAlias;
+    private string? _cliqAccountName;
+    private bool _showPaymentInfo;
+    private bool _isCancelling;
+    private string? _cancelError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateTask;
+        _userId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (_userId is null) return;
+
+        await ReloadAsync();
+
+        var settings = await UnitOfWork.Settings.GetAsync();
+        _cliqAlias = settings.CliqAlias;
+        _cliqAccountName = settings.CliqAccountName;
+    }
+
+    private async Task ReloadAsync()
+    {
+        if (_userId is null) return;
+
+        _charges = await UnitOfWork.Billing.GetChargesAsync(_userId);
+        _unsettledTotal = await UnitOfWork.Billing.GetUnsettledTotalAsync(_userId);
+        _cancelledToday = await UnitOfWork.Billing.GetCancelledTodayCountAsync(_userId);
+    }
+
+    private async Task CancelCharge(Guid chargeId)
+    {
+        if (_userId is null || _isCancelling) return;
+
+        _isCancelling = true;
+        _cancelError = null;
+
+        var (success, error) = await UnitOfWork.Billing.CancelChargeAsync(_userId, chargeId, "العقار كان مؤجر عند الاتصال بصاحبه");
+        if (success)
+        {
+            await UnitOfWork.CompleteAsync();
+            await NotifyOwnerAsync(chargeId);
+            await ReloadAsync();
+        }
+        else
+        {
+            _cancelError = error;
+        }
+
+        _isCancelling = false;
+    }
+
+    // يرسل سؤال لصاحب العقار عبر واتساب للتأكد إذا فعلاً تأجّر، وينشئ سجل انتظار للرد
+    private async Task NotifyOwnerAsync(Guid chargeId)
+    {
+        var charge = _charges.FirstOrDefault(c => c.Id == chargeId);
+        if (charge is null) return;
+
+        var listing = await UnitOfWork.Listings.GetByIdAsync(charge.ListingId);
+        if (listing is null) return;
+
+        await AvailabilityChecker.TriggerCheckAsync(
+            listing, chargeId,
+            $"مرحباً، أحد المستخدمين أبلغ أن إعلانك \"{listing.Title}\" على RentConnect تم تأجيره.\nهل هذا صحيح؟ أجب بـ \"نعم\" أو \"لا\".");
+    }
+}

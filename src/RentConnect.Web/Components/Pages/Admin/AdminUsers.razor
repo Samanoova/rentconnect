@@ -1,0 +1,96 @@
+@page "/admin/users"
+@attribute [Authorize(Roles = RoleNames.Admin)]
+@inject IUnitOfWork UnitOfWork
+
+<section class="page-header">
+    <h2>إدارة المستخدمين</h2>
+    <p>حظر أو رفع الحظر عن حسابات المستخدمين.</p>
+</section>
+
+@if (_users.Count == 0)
+{
+    <p class="empty-state">لا يوجد مستخدمون.</p>
+}
+else
+{
+    <div class="admin-table-wrap">
+        <table class="admin-table">
+            <thead>
+                <tr>
+                    <th>البريد الإلكتروني / اسم المستخدم</th>
+                    <th>رقم الهاتف</th>
+                    <th>طبيعة العمل</th>
+                    <th>الدور</th>
+                    <th>الحالة</th>
+                    <th>🧾 المستحقات</th>
+                    <th>تاريخ التسجيل</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var user in _users)
+                {
+                    <tr>
+                        <td>@(user.Email ?? user.UserName)</td>
+                        <td>@(user.PhoneNumber ?? "—")</td>
+                        <td>@(user.Occupation ?? "—")</td>
+                        <td>@(user.IsAdmin ? "أدمن" : "مستخدم")</td>
+                        <td>
+                            @if (user.IsBanned)
+                            {
+                                <span class="badge badge-rented">محظور</span>
+                            }
+                            else
+                            {
+                                <span class="badge badge-available">فعّال</span>
+                            }
+                        </td>
+                        <td>@BalanceOf(user.Id).ToString("N2") د.أ</td>
+                        <td>@user.CreatedAt.ToString("yyyy-MM-dd")</td>
+                        <td class="admin-actions">
+                            @if (!user.IsAdmin)
+                            {
+                                <button class="link-btn @(user.IsBanned ? "" : "danger")" @onclick="() => ToggleBan(user)">
+                                    @(user.IsBanned ? "رفع الحظر" : "حظر")
+                                </button>
+                            }
+                            @if (BalanceOf(user.Id) > 0)
+                            {
+                                <button class="link-btn" @onclick="() => SettleBalance(user)">تصفير الرصيد (تم الدفع)</button>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private List<UserDto> _users = new();
+    private Dictionary<string, decimal> _balances = new();
+
+    protected override async Task OnInitializedAsync() => await Reload();
+
+    private async Task Reload()
+    {
+        _users = await UnitOfWork.Users.GetAllAsync();
+        _balances = await UnitOfWork.Billing.GetUnsettledTotalsAsync();
+    }
+
+    private decimal BalanceOf(string userId) => _balances.TryGetValue(userId, out var total) ? total : 0;
+
+    private async Task ToggleBan(UserDto user)
+    {
+        await UnitOfWork.Users.SetBannedAsync(user.Id, !user.IsBanned);
+        await UnitOfWork.CompleteAsync();
+        await Reload();
+    }
+
+    private async Task SettleBalance(UserDto user)
+    {
+        await UnitOfWork.Billing.SettleUserAsync(user.Id);
+        await UnitOfWork.CompleteAsync();
+        await Reload();
+    }
+}

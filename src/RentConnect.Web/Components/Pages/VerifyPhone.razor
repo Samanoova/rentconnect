@@ -1,0 +1,70 @@
+@page "/verify-phone"
+@inject IUnitOfWork UnitOfWork
+
+<section class="auth-page">
+    <div class="auth-card">
+        <h2>تأكيد رقم الهاتف</h2>
+
+        @if (_pending is null)
+        {
+            <p class="form-error">انتهت صلاحية طلب التسجيل أو أنه غير موجود. الرجاء البدء من جديد.</p>
+            <p class="auth-switch"><a href="/register">العودة للتسجيل</a></p>
+        }
+        else
+        {
+            <p>تم إرسال رمز تحقق مكوّن من 6 أرقام عبر واتساب لرقم <strong>@MaskPhone(_pending.PhoneNumber)</strong>.</p>
+
+            @if (ErrorMessage is not null)
+            {
+                <p class="form-error">@ErrorMessage</p>
+            }
+            @if (Status == "otp_resent")
+            {
+                <p class="form-success">تم إرسال رمز جديد.</p>
+            }
+
+            <form method="post" action="/account/register-verify">
+                <label>رمز التحقق</label>
+                <input type="text" name="Code" inputmode="numeric" maxlength="6" placeholder="XXXXXX" required autofocus />
+                <input type="hidden" name="Id" value="@Id" />
+                <input type="hidden" name="ReturnUrl" value="@ReturnUrl" />
+                <button type="submit" class="btn btn-primary auth-submit">تأكيد</button>
+            </form>
+
+            <form method="post" action="/account/register-resend" class="nav-logout-form">
+                <input type="hidden" name="Id" value="@Id" />
+                <input type="hidden" name="ReturnUrl" value="@ReturnUrl" />
+                <button type="submit" class="nav-link-btn">لم يصلك الرمز؟ أعد الإرسال</button>
+            </form>
+        }
+    </div>
+</section>
+
+@code {
+    [SupplyParameterFromQuery] public string? Id { get; set; }
+    [SupplyParameterFromQuery] public string? Error { get; set; }
+    [SupplyParameterFromQuery] public string? Status { get; set; }
+    [SupplyParameterFromQuery] public string? ReturnUrl { get; set; }
+
+    private RentConnect.Data.Dtos.PendingRegistrationDto? _pending;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Guid.TryParse(Id, out var guid))
+        {
+            _pending = await UnitOfWork.PendingRegistrations.GetAsync(guid);
+        }
+    }
+
+    private static string MaskPhone(string phone) =>
+        phone.Length <= 4 ? phone : new string('*', phone.Length - 4) + phone[^4..];
+
+    private string? ErrorMessage => Error switch
+    {
+        "otp_invalid" => "الرمز غير صحيح. حاول مرة أخرى.",
+        "otp_resend_wait" => "الرجاء الانتظار قليلاً قبل طلب رمز جديد.",
+        "otp_send_failed" => "تعذّر إرسال الرمز حالياً. حاول مرة أخرى لاحقاً.",
+        null => null,
+        _ => "حدث خطأ غير متوقع.",
+    };
+}

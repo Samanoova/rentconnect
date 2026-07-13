@@ -1,0 +1,137 @@
+@page "/"
+@inject IUnitOfWork UnitOfWork
+
+<section class="page-header browse-header">
+    <div>
+        <h2>لقيت بيتك الجاي؟</h2>
+        <p>تصفّح أحدث إعلانات الإيجار المتوفرة وفلترها بالمنطقة، السعر، وعدد الغرف.</p>
+    </div>
+
+    <AuthorizeView>
+        <Authorized><a class="btn btn-primary" href="/my-ads">+ أضف إعلانك</a></Authorized>
+        <NotAuthorized><a class="btn btn-primary" href="/login?returnUrl=%2Fmy-ads">+ أضف إعلانك</a></NotAuthorized>
+    </AuthorizeView>
+</section>
+
+<section class="filters-bar">
+    <input @bind="_filterRegion" @bind:event="oninput" @bind:after="ApplyFilters" placeholder="المنطقة (عبدون، إربد...)" />
+
+    <input type="number" @bind="_minPrice" @bind:after="ApplyFilters" placeholder="السعر من" min="0" />
+    <input type="number" @bind="_maxPrice" @bind:after="ApplyFilters" placeholder="السعر إلى" min="0" />
+
+    <select @bind="_minBedrooms" @bind:after="ApplyFilters">
+        <option value="0">كل عدد الغرف</option>
+        <option value="1">غرفة وأكثر</option>
+        <option value="2">غرفتان وأكثر</option>
+        <option value="3">3 غرف وأكثر</option>
+        <option value="4">4 غرف وأكثر</option>
+    </select>
+
+    <select @bind="_propertyTypeFilter" @bind:after="ApplyFilters">
+        <option value="">كل الأنواع</option>
+        <option value="@PropertyType.Apartment">شقة</option>
+        <option value="@PropertyType.Studio">استديو</option>
+        <option value="@PropertyType.Roof">روف</option>
+        <option value="@PropertyType.Villa">فيلا</option>
+    </select>
+
+    <label class="checkbox-row filter-checkbox">
+        <input type="checkbox" @bind="_furnishedOnly" @bind:after="ApplyFilters" />
+        مفروشة فقط
+    </label>
+
+    <label class="checkbox-row filter-checkbox">
+        <input type="checkbox" @bind="_yardOnly" @bind:after="ApplyFilters" />
+        فيها حوش
+    </label>
+
+    <label class="checkbox-row filter-checkbox">
+        <input type="checkbox" @bind="_balconyOnly" @bind:after="ApplyFilters" />
+        فيها بلكونة
+    </label>
+
+    <label class="checkbox-row filter-checkbox">
+        <input type="checkbox" @bind="_elevatorOnly" @bind:after="ApplyFilters" />
+        فيها مصعد
+    </label>
+
+    <label class="checkbox-row filter-checkbox">
+        <input type="checkbox" @bind="_garageOnly" @bind:after="ApplyFilters" />
+        فيها كراج
+    </label>
+</section>
+
+<p class="results-count">@_filtered.Count إعلان متوفر</p>
+
+@if (_filtered.Count == 0)
+{
+    <p class="empty-state">لا توجد إعلانات مطابقة لبحثك. جرّب تعديل الفلترة.</p>
+}
+else
+{
+    <section class="listings-grid">
+        @foreach (var listing in _filtered)
+        {
+            <PublicListingCard Listing="listing" />
+        }
+    </section>
+}
+
+@code {
+    private List<ListingDto> _all = new();
+    private List<ListingDto> _filtered = new();
+
+    private string _filterRegion = string.Empty;
+    private decimal? _minPrice;
+    private decimal? _maxPrice;
+    private int _minBedrooms;
+    private string _propertyTypeFilter = string.Empty;
+    private bool _furnishedOnly;
+    private bool _yardOnly;
+    private bool _balconyOnly;
+    private bool _elevatorOnly;
+    private bool _garageOnly;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _all = await UnitOfWork.Listings.GetAllAsync(status: ListingStatus.Available, disabledByAdmin: false);
+        ApplyFilters();
+    }
+
+    private void ApplyFilters()
+    {
+        var query = _all.AsEnumerable();
+
+        if (!string.IsNullOrWhiteSpace(_filterRegion))
+            query = query.Where(l => l.Region.Contains(_filterRegion, StringComparison.OrdinalIgnoreCase));
+
+        if (_minPrice.HasValue)
+            query = query.Where(l => l.PriceJod >= _minPrice.Value);
+
+        if (_maxPrice.HasValue)
+            query = query.Where(l => l.PriceJod <= _maxPrice.Value);
+
+        if (_minBedrooms > 0)
+            query = query.Where(l => l.Bedrooms >= _minBedrooms);
+
+        if (Enum.TryParse<PropertyType>(_propertyTypeFilter, out var propertyType))
+            query = query.Where(l => l.PropertyType == propertyType);
+
+        if (_furnishedOnly)
+            query = query.Where(l => l.IsFurnished);
+
+        if (_yardOnly)
+            query = query.Where(l => l.HasYard);
+
+        if (_balconyOnly)
+            query = query.Where(l => l.HasBalcony);
+
+        if (_elevatorOnly)
+            query = query.Where(l => l.HasElevator);
+
+        if (_garageOnly)
+            query = query.Where(l => l.HasGarage);
+
+        _filtered = query.OrderByDescending(l => l.CreatedAt).ToList();
+    }
+}

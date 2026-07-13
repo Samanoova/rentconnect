@@ -1,0 +1,89 @@
+<article class="public-card" @onclick="NavigateToDetails">
+    <div class="public-card-image">
+        @if (CoverImageUrl is not null)
+        {
+            <img src="@CoverImageUrl" alt="@Listing.Title" loading="lazy" />
+        }
+        else if (Listing.Images.Count > 0)
+        {
+            <div class="image-placeholder video-placeholder">🎥</div>
+        }
+        else
+        {
+            <div class="image-placeholder">🏠</div>
+        }
+        @if (Listing.Images.Count > 1)
+        {
+            <span class="image-count">+@(Listing.Images.Count - 1)</span>
+        }
+    </div>
+
+    <div class="public-card-body">
+        <div class="public-card-top">
+            <div>
+                <div class="listing-title">@Listing.Title</div>
+                <span class="badge badge-type">@ListingDisplay.PropertyTypeLabel(Listing.PropertyType)</span>
+            </div>
+            <div class="listing-price">@Listing.PriceJod.ToString("N0") <span>د.أ / @ListingDisplay.PaymentFrequencyLabel(Listing.PaymentIntervalMonths)</span></div>
+        </div>
+
+        <div class="listing-region">📍 @Listing.Region</div>
+
+        <div class="listing-meta">
+            <span>🛏 @Listing.Bedrooms غرف</span>
+            <span>🚿 @Listing.Bathrooms حمام</span>
+            @if (Listing.AreaSqm.HasValue)
+            {
+                <span>📐 @Listing.AreaSqm م²</span>
+            }
+            <span>@(Listing.IsFurnished ? "مفروشة" : "غير مفروشة")</span>
+        </div>
+
+        @if (AmenityLabels.Count > 0)
+        {
+            <div class="listing-meta">
+                @foreach (var amenity in AmenityLabels)
+                {
+                    <span>@amenity</span>
+                }
+            </div>
+        }
+
+        @if (ConditionLabels.Count > 0)
+        {
+            <div class="listing-meta">
+                @foreach (var condition in ConditionLabels)
+                {
+                    <span class="badge badge-condition">⚑ @condition</span>
+                }
+            </div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(Listing.Description))
+        {
+            <p class="listing-desc">@Listing.Description</p>
+        }
+
+        <div class="public-card-footer">
+            <span class="freshness-label">آخر تأكيد: منذ @DaysSince @(DaysSince == 1 ? "يوم" : "أيام")</span>
+            <button type="button" class="btn btn-primary btn-call" @onclick="NavigateToDetails" @onclick:stopPropagation="true">📞 عرض رقم التواصل</button>
+        </div>
+    </div>
+</article>
+
+@code {
+    [Parameter, EditorRequired] public ListingDto Listing { get; set; } = default!;
+
+    [Inject] private NavigationManager Nav { get; set; } = default!;
+
+    private int DaysSince => (int)(DateTime.UtcNow - Listing.LastConfirmedAt).TotalDays;
+
+    private List<string> ConditionLabels => ListingDisplay.ConditionLabels(Listing).ToList();
+
+    private List<string> AmenityLabels => ListingDisplay.AmenityLabels(Listing).ToList();
+
+    // بنفضّل عرض أول صورة فعلية كغلاف للبطاقة، حتى لو أول ملف مرفوع كان فيديو
+    private string? CoverImageUrl => Listing.Images.FirstOrDefault(i => !ListingDisplay.IsVideoFile(i.Url))?.Url;
+
+    private void NavigateToDetails() => Nav.NavigateTo($"/listing/{Listing.Id}");
+}

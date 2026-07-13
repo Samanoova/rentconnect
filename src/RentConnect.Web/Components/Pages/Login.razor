@@ -1,0 +1,50 @@
+@page "/login"
+@inject IConfiguration Configuration
+
+<section class="auth-page">
+    <div class="auth-card">
+        <h2>تسجيل الدخول</h2>
+
+        @if (ErrorMessage is not null)
+        {
+            <p class="form-error">@ErrorMessage</p>
+        }
+
+        <form method="post" action="/account/login">
+            <label>اسم المستخدم أو البريد الإلكتروني</label>
+            <input type="text" name="UserNameOrEmail" required />
+
+            <label>كلمة المرور</label>
+            <input type="password" name="Password" required />
+
+            <input type="hidden" name="ReturnUrl" value="@ReturnUrl" />
+
+            <button type="submit" class="btn btn-primary auth-submit">تسجيل الدخول</button>
+        </form>
+
+        @if (GoogleEnabled)
+        {
+            <a class="btn btn-google" href="@GoogleLoginUrl">تسجيل الدخول بحساب Google</a>
+        }
+
+        <p class="auth-switch">ليس لديك حساب؟ <a href="/register">أنشئ حساباً جديداً</a></p>
+    </div>
+</section>
+
+@code {
+    [SupplyParameterFromQuery] public string? Error { get; set; }
+    [SupplyParameterFromQuery] public string? ReturnUrl { get; set; }
+
+    private bool GoogleEnabled => !string.IsNullOrWhiteSpace(Configuration["Authentication:Google:ClientId"]);
+
+    private string GoogleLoginUrl => $"/account/login-google?returnUrl={Uri.EscapeDataString(ReturnUrl ?? "/")}";
+
+    private string? ErrorMessage => Error switch
+    {
+        "invalid" => "اسم المستخدم أو كلمة المرور غير صحيحة.",
+        "banned" => "تم حظر هذا الحساب من قِبل الإدارة.",
+        "external" => "تعذّر تسجيل الدخول بحساب Google. حاول مرة أخرى.",
+        null => null,
+        _ => "حدث خطأ غير متوقع. حاول مرة أخرى.",
+    };
+}

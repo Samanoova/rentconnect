@@ -1,0 +1,294 @@
+@implements IDisposable
+@using Microsoft.Extensions.Http
+
+<div class="location-picker">
+    <label>المنطقة <span class="required-mark">*</span></label>
+    <input @bind="Region" @bind:event="oninput" @bind:after="NotifyRegionChanged"
+           class="@(IsInvalid ? "input-error" : "")"
+           placeholder="مثلاً: عبدون، الصويفية، إربد..." />
+
+    <div class="map-label-row">
+        <label class="map-label">حدّد الموقع بدقة على الخريطة (اختياري)</label>
+        <button type="button" class="btn btn-ghost btn-locate" @onclick="UseCurrentLocation" disabled="@_isLocating">
+            @(_isLocating ? "جارِ التحديد..." : "📍 استخدم موقعي الحالي")
+        </button>
+    </div>
+
+    <div class="map-search-row">
+        <input @bind="_searchQuery" @bind:event="oninput" @onkeydown="HandleSearchKeydown"
+               placeholder="🔎 ابحث عن مكان... (مثلاً: دوار الداخلية، عمّان)" />
+        <button type="button" class="btn btn-ghost btn-locate" @onclick="SearchLocationAsync" disabled="@_isSearching">
+            @(_isSearching ? "جارِ البحث..." : "بحث")
+        </button>
+    </div>
+    @if (_searchResults.Count > 0)
+    {
+        <ul class="map-search-results">
+            @foreach (var result in _searchResults)
+            {
+                <li>
+                    <button type="button" @onclick="() => SelectSearchResult(result)">📍 @result.DisplayName</button>
+                </li>
+            }
+        </ul>
+    }
+    @if (_searchError is not null)
+    {
+        <p class="form-error">@_searchError</p>
+    }
+
+    <div id="map-@_elementId" class="map-box"></div>
+
+    <p class="coords-hint">
+        @if (Latitude.HasValue && Longitude.HasValue)
+        {
+            <span>الموقع المحدد: @Latitude.Value.ToString("F5"), @Longitude.Value.ToString("F5")</span>
+        }
+        else
+        {
+            <span>اضغط على أي مكان بالخريطة أو استخدم موقعك الحالي لتحديد الموقع الدقيق للعقار</span>
+        }
+    </p>
+
+    @if (_locationError is not null)
+    {
+        <p class="form-error">@_locationError</p>
+    }
+</div>
+
+@code {
+    [Parameter] public string Region { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> RegionChanged { get; set; }
+    [Parameter] public bool IsInvalid { get; set; }
+
+    [Parameter] public double? Latitude { get; set; }
+    [Parameter] public EventCallback<double?> LatitudeChanged { get; set; }
+
+    [Parameter] public double? Longitude { get; set; }
+    [Parameter] public EventCallback<double?> LongitudeChanged { get; set; }
+
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+    [Inject] private IHttpClientFactory HttpClientFactory { get; set; } = default!;
+
+    private readonly string _elementId = "loc" + Guid.NewGuid().ToString("N")[..8];
+    private DotNetObjectReference<LocationPicker>? _selfRef;
+    private bool _mapInitialized;
+    private string? _locationError;
+    private bool _isLocating;
+
+    private string _searchQuery = string.Empty;
+    private bool _isSearching;
+    private List<NominatimSearchResult> _searchResults = new();
+    private string? _searchError;
+
+    // إحداثيات افتراضية تقريبية لعمّان لو ما في موقع محدد بعد
+    private const double DefaultLat = 31.9539;
+    private const double DefaultLng = 35.9106;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_mapInitialized)
+        {
+            _mapInitialized = true;
+            _selfRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync(
+                "locationPicker.init",
+                $"map-{_elementId}",
+                _selfRef,
+                Latitude ?? DefaultLat,
+                Longitude ?? DefaultLng);
+        }
+    }
+
+    private Task NotifyRegionChanged() => RegionChanged.InvokeAsync(Region);
+
+    private async Task UseCurrentLocation()
+    {
+        _locationError = null;
+        _isLocating = true;
+        await JS.InvokeVoidAsync("locationPicker.locate", $"map-{_elementId}", _selfRef);
+    }
+
+    // تستدعيها الخريطة (جافاسكريبت) عند الضغط اليدوي على أي نقطة بالخريطة
+    [JSInvokable]
+    public async Task OnMapClicked(double lat, double lng)
+    {
+        Latitude = lat;
+        Longitude = lng;
+        await LatitudeChanged.InvokeAsync(lat);
+        await LongitudeChanged.InvokeAsync(lng);
+        StateHasChanged();
+    }
+
+    // تستدعيها الجافاسكريبت تحديداً عند نجاح تحديد "موقعي الحالي" - هون بنعبّي
+    // المنطقة تلقائياً بالاعتماد على الإحداثيات (reverse geocoding)
+    [JSInvokable]
+    public async Task OnCurrentLocationDetected(double lat, double lng)
+    {
+        Latitude = lat;
+        Longitude = lng;
+        await LatitudeChanged.InvokeAsync(lat);
+        await LongitudeChanged.InvokeAsync(lng);
+        StateHasChanged();
+
+        await ReverseGeocodeRegionAsync(lat, lng);
+
+        _isLocating = false;
+        StateHasChanged();
+    }
+
+    // تستدعيها الجافاسكريبت لو فشل تحديد الموقع الحالي (رفض الإذن، إلخ)
+    [JSInvokable]
+    public void OnLocationError(string message)
+    {
+        _locationError = message;
+        _isLocating = false;
+        StateHasChanged();
+    }
+
+    private async Task HandleSearchKeydown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await SearchLocationAsync();
+        }
+    }
+
+    // بحث عن مكان بالاسم (زي بحث خرائط جوجل) عن طريق Nominatim وعرض أفضل النتائج للاختيار منها
+    private async Task SearchLocationAsync()
+    {
+        _searchError = null;
+        _searchResults.Clear();
+
+        if (string.IsNullOrWhiteSpace(_searchQuery)) return;
+
+        _isSearching = true;
+
+        try
+        {
+            var client = HttpClientFactory.CreateClient();
+            var url = $"https://nominatim.openstreetmap.org/search?format=jsonv2&q={Uri.EscapeDataString(_searchQuery)}&limit=5&accept-language=ar";
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.UserAgent.ParseAdd("RentConnect/1.0");
+
+            using var response = await client.SendAsync(request);
+            if (response.IsSuccessStatusCode)
+            {
+                var results = await response.Content.ReadFromJsonAsync<List<NominatimSearchResult>>();
+                _searchResults = results ?? new();
+                if (_searchResults.Count == 0)
+                {
+                    _searchError = "لم يتم العثور على نتائج لهذا البحث.";
+                }
+            }
+            else
+            {
+                _searchError = "تعذّر البحث حالياً، الرجاء المحاولة مرة أخرى.";
+            }
+        }
+        catch
+        {
+            _searchError = "تعذّر البحث حالياً، تحقّق من الاتصال بالإنترنت.";
+        }
+        finally
+        {
+            _isSearching = false;
+        }
+    }
+
+    private async Task SelectSearchResult(NominatimSearchResult result)
+    {
+        if (!double.TryParse(result.Lat, System.Globalization.CultureInfo.InvariantCulture, out var lat) ||
+            !double.TryParse(result.Lon, System.Globalization.CultureInfo.InvariantCulture, out var lng))
+        {
+            return;
+        }
+
+        Latitude = lat;
+        Longitude = lng;
+        await LatitudeChanged.InvokeAsync(lat);
+        await LongitudeChanged.InvokeAsync(lng);
+
+        await JS.InvokeVoidAsync("locationPicker.setView", $"map-{_elementId}", lat, lng);
+
+        await ReverseGeocodeRegionAsync(lat, lng);
+
+        _searchResults.Clear();
+        _searchQuery = result.DisplayName ?? _searchQuery;
+    }
+
+    private async Task ReverseGeocodeRegionAsync(double lat, double lng)
+    {
+        try
+        {
+            var client = HttpClientFactory.CreateClient();
+            var url = $"https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat={lat}&lon={lng}&accept-language=ar";
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.UserAgent.ParseAdd("RentConnect/1.0");
+
+            using var response = await client.SendAsync(request);
+            if (!response.IsSuccessStatusCode) return;
+
+            var result = await response.Content.ReadFromJsonAsync<NominatimResponse>();
+            var address = result?.Address;
+            var region = address?.Suburb ?? address?.Neighbourhood ?? address?.CityDistrict
+                         ?? address?.Town ?? address?.Village ?? address?.City;
+
+            if (!string.IsNullOrWhiteSpace(region))
+            {
+                Region = region;
+                await RegionChanged.InvokeAsync(Region);
+            }
+        }
+        catch
+        {
+            // فشل صامت بجلب اسم المنطقة - المستخدم لسا فيه يكتبها يدوياً
+        }
+    }
+
+    private class NominatimSearchResult
+    {
+        [System.Text.Json.Serialization.JsonPropertyName("lat")]
+        public string Lat { get; set; } = string.Empty;
+
+        [System.Text.Json.Serialization.JsonPropertyName("lon")]
+        public string Lon { get; set; } = string.Empty;
+
+        [System.Text.Json.Serialization.JsonPropertyName("display_name")]
+        public string? DisplayName { get; set; }
+    }
+
+    private class NominatimResponse
+    {
+        [System.Text.Json.Serialization.JsonPropertyName("address")]
+        public NominatimAddress? Address { get; set; }
+    }
+
+    private class NominatimAddress
+    {
+        [System.Text.Json.Serialization.JsonPropertyName("suburb")]
+        public string? Suburb { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("neighbourhood")]
+        public string? Neighbourhood { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("city_district")]
+        public string? CityDistrict { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("town")]
+        public string? Town { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("village")]
+        public string? Village { get; set; }
+
+        [System.Text.Json.Serialization.JsonPropertyName("city")]
+        public string? City { get; set; }
+    }
+
+    public void Dispose()
+    {
+        _selfRef?.Dispose();
+    }
+}

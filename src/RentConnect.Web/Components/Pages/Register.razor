@@ -1,0 +1,63 @@
+@page "/register"
+@inject IConfiguration Configuration
+
+<section class="auth-page">
+    <div class="auth-card">
+        <h2>إنشاء حساب جديد</h2>
+
+        @if (ErrorMessage is not null)
+        {
+            <p class="form-error">@ErrorMessage</p>
+        }
+
+        <form method="post" action="/account/register-request">
+            <label>البريد الإلكتروني</label>
+            <input type="email" name="Email" required />
+
+            <label>رقم الهاتف</label>
+            <input type="tel" name="PhoneNumber" placeholder="07XXXXXXXX" required />
+
+            <label>طبيعة العمل / الوظيفة</label>
+            <input type="text" name="Occupation" placeholder="مثلاً: موظف، طالب، صاحب عمل حر..." />
+
+            <label>كلمة المرور</label>
+            <input type="password" name="Password" required minlength="4" />
+
+            <label>تأكيد كلمة المرور</label>
+            <input type="password" name="ConfirmPassword" required minlength="4" />
+
+            <input type="hidden" name="ReturnUrl" value="@ReturnUrl" />
+
+            <button type="submit" class="btn btn-primary auth-submit">إنشاء الحساب</button>
+        </form>
+
+        @if (GoogleEnabled)
+        {
+            <a class="btn btn-google" href="@GoogleLoginUrl">التسجيل بحساب Google</a>
+        }
+
+        <p class="auth-switch">لديك حساب مسبقاً؟ <a href="/login">تسجيل الدخول</a></p>
+    </div>
+</section>
+
+@code {
+    [SupplyParameterFromQuery] public string? Error { get; set; }
+    [SupplyParameterFromQuery] public string? ReturnUrl { get; set; }
+
+    private bool GoogleEnabled => !string.IsNullOrWhiteSpace(Configuration["Authentication:Google:ClientId"]);
+
+    private string GoogleLoginUrl => $"/account/login-google?returnUrl={Uri.EscapeDataString(ReturnUrl ?? "/")}";
+
+    private string? ErrorMessage => Error switch
+    {
+        "mismatch" => "كلمتا المرور غير متطابقتين.",
+        "phone_taken" => "رقم الهاتف هذا مستخدم بحساب آخر مسبقاً.",
+        "otp_unavailable" => "خدمة التحقق عبر واتساب غير مُفعّلة حالياً. الرجاء المحاولة لاحقاً.",
+        "otp_send_failed" => "تعذّر إرسال رمز التحقق عبر واتساب. الرجاء المحاولة مرة أخرى.",
+        "otp_expired" => "انتهت صلاحية رمز التحقق. الرجاء تعبئة النموذج من جديد.",
+        "otp_too_many" => "عدد كبير جداً من المحاولات الخاطئة. الرجاء تعبئة النموذج من جديد.",
+        "failed" => "تعذّر إنشاء الحساب. قد يكون البريد الإلكتروني مستخدماً مسبقاً أو كلمة المرور قصيرة جداً.",
+        null => null,
+        _ => "حدث خطأ غير متوقع. حاول مرة أخرى.",
+    };
+}
