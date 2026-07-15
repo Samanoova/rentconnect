@@ -237,10 +237,15 @@ public static class AccountEndpoints
             return Results.Redirect("/");
         });
 
-        group.MapGet("/login-google", (string? returnUrl, HttpContext http) =>
+        group.MapGet("/login-google", (string? returnUrl, HttpContext http, SignInManager<ApplicationUser> signInManager) =>
         {
             var callbackUrl = $"{http.Request.Scheme}://{http.Request.Host}/account/google-callback?returnUrl={Uri.EscapeDataString(returnUrl ?? "/")}";
-            var properties = new AuthenticationProperties { RedirectUri = callbackUrl };
+
+            // لازم نبني AuthenticationProperties عبر SignInManager.ConfigureExternalAuthenticationProperties
+            // وليس يدوياً - هاي هي الطريقة الوحيدة اللي بتحط مفتاح "LoginProvider" الداخلي اللي
+            // GetExternalLoginInfoAsync (بـ /account/google-callback) بيتحقق من وجوده. من دونه، الـ
+            // cookie الخارجي بينعمل authenticate بنجاح لكن GetExternalLoginInfoAsync برجّع null دايماً.
+            var properties = signInManager.ConfigureExternalAuthenticationProperties(GoogleDefaults.AuthenticationScheme, callbackUrl);
             return Results.Challenge(properties, [GoogleDefaults.AuthenticationScheme]);
         });
 
