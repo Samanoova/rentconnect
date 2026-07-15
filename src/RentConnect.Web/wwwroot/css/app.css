@@ -344,7 +344,24 @@ main { max-width: 1100px; margin: 0 auto; padding: 28px 24px 60px; }
 .admin-table a { color: var(--clay-dark); text-decoration: none; }
 .admin-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .transfer-owner-row { display: flex; gap: 6px; align-items: center; }
-.transfer-owner-row select { font-size: 12px; padding: 4px 6px; }
+.user-search-picker { position: relative; }
+.user-search-picker input { font-size: 12px; padding: 4px 6px; width: 200px; }
+.user-search-results {
+  position: absolute; z-index: 20; top: 100%; right: 0; margin-top: 2px;
+  width: 240px; max-height: 220px; overflow-y: auto;
+  background: var(--paper, #fff); border: 1px solid var(--stone-100); border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,.12);
+  list-style: none; padding: 4px; white-space: normal;
+}
+.user-search-results li {
+  padding: 6px 8px; border-radius: 4px; cursor: pointer;
+  display: flex; justify-content: space-between; gap: 8px; font-size: 12px;
+}
+.user-search-results li:hover { background: var(--stone-50, #f5f5f4); }
+.user-search-email { color: var(--slate); }
+.user-search-phone { color: var(--stone-400, #a8a29e); direction: ltr; }
+.user-search-empty { cursor: default; color: var(--stone-400, #a8a29e); }
+.user-search-empty:hover { background: none; }
 
 /* Modal */
 @keyframes overlay-fade-in { from { opacity: 0; } to { opacity: 1; } }

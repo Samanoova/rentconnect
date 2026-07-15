@@ -84,16 +84,13 @@ else
                                 📱 تحقق من التوفر
                             </button>
                             <button class="link-btn danger" @onclick="() => Delete(listing.Id)">حذف</button>
-                            <div class="transfer-owner-row">
-                                <select @bind="_selectedNewOwner[listing.Id]">
-                                    <option value="">نقل الملكية لـ...</option>
-                                    @foreach (var user in _users.Where(u => u.Id != listing.OwnerId))
-                                    {
-                                        <option value="@user.Id">@(user.Email ?? user.UserName ?? user.Id)</option>
-                                    }
-                                </select>
+                            <div class="transfer-owner-row" @key="@($"{listing.Id}_{listing.OwnerId}")">
+                                <UserSearchPicker Users="_users"
+                                                   ExcludeUserId="@listing.OwnerId"
+                                                   Placeholder="نقل الملكية لـ... (بريد أو هاتف)"
+                                                   OnSelect="user => SelectNewOwner(listing.Id, user)" />
                                 <button class="link-btn"
-                                        disabled="@string.IsNullOrEmpty(GetSelectedNewOwner(listing.Id))"
+                                        disabled="@(!_selectedNewOwner.TryGetValue(listing.Id, out var pending) || pending is null)"
                                         @onclick="() => TransferOwnership(listing)">
                                     نقل
                                 </button>
@@ -110,7 +107,7 @@ else
     private List<ListingDto> _listings = new();
     private List<UserDto> _users = new();
     private Dictionary<string, UserDto> _usersById = new();
-    private Dictionary<Guid, string> _selectedNewOwner = new();
+    private Dictionary<Guid, UserDto?> _selectedNewOwner = new();
     private string _filterRegion = string.Empty;
     private string _filterStatus = string.Empty;
     private string? _transferError;
@@ -128,17 +125,9 @@ else
         _listings = await UnitOfWork.Listings.GetAllAsync(
             string.IsNullOrWhiteSpace(_filterRegion) ? null : _filterRegion,
             status);
-
-        // كل صف لازم يكون عنده مدخل جاهز بالقاموس قبل أول render - وإلا الـ @bind على
-        // indexer الـ Dictionary بيرمي KeyNotFoundException لأنه بيحاول يقرأ القيمة الحالية أولاً
-        foreach (var listing in _listings)
-        {
-            _selectedNewOwner.TryAdd(listing.Id, string.Empty);
-        }
     }
 
-    private string GetSelectedNewOwner(Guid listingId) =>
-        _selectedNewOwner.TryGetValue(listingId, out var value) ? value : string.Empty;
+    private void SelectNewOwner(Guid listingId, UserDto user) => _selectedNewOwner[listingId] = user;
 
     private string OwnerLabel(string? ownerId)
     {
@@ -172,8 +161,7 @@ else
     {
         _transferError = null;
 
-        var newOwnerId = GetSelectedNewOwner(listing.Id);
-        if (string.IsNullOrEmpty(newOwnerId) || !_usersById.TryGetValue(newOwnerId, out var newOwner))
+        if (!_selectedNewOwner.TryGetValue(listing.Id, out var newOwner) || newOwner is null)
         {
             return;
         }
@@ -184,10 +172,10 @@ else
             return;
         }
 
-        await UnitOfWork.Listings.TransferOwnershipAsync(listing.Id, newOwnerId, newOwner.PhoneNumber);
+        await UnitOfWork.Listings.TransferOwnershipAsync(listing.Id, newOwner.Id, newOwner.PhoneNumber);
         await UnitOfWork.CompleteAsync();
 
-        _selectedNewOwner[listing.Id] = string.Empty;
+        _selectedNewOwner.Remove(listing.Id);
         await Reload();
     }
 
