@@ -25,6 +25,9 @@ public interface IListingRepository
     Task<bool> SetDisabledByAdminAsync(Guid id, bool disabled);
     Task<bool> DeleteAsync(Guid id);
 
+    /// <summary>ينقل ملكية الإعلان لمستخدم آخر (مثلاً بعد ما الأدمن ينشئه نيابة عن صاحب العقار) - يحدّث رقم التواصل أيضاً ليطابق المالك الجديد.</summary>
+    Task<bool> TransferOwnershipAsync(Guid id, string newOwnerId, string newOwnerPhone);
+
     Task<bool> AddImagesAsync(Guid listingId, List<string> imageUrls);
     Task<bool> RemoveImageAsync(Guid listingId, Guid imageId);
 

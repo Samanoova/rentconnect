@@ -206,6 +206,16 @@ internal class ListingRepository : IListingRepository
         return true;
     }
 
+    public async Task<bool> TransferOwnershipAsync(Guid id, string newOwnerId, string newOwnerPhone)
+    {
+        var listing = await _db.Listings.FindAsync(id);
+        if (listing is null) return false;
+
+        listing.OwnerId = newOwnerId;
+        listing.OwnerPhone = newOwnerPhone;
+        return true;
+    }
+
     public async Task<bool> AddImagesAsync(Guid listingId, List<string> imageUrls)
     {
         var listing = await _db.Listings.Include(l => l.Images).FirstOrDefaultAsync(l => l.Id == listingId);

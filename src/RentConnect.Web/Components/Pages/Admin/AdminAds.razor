@@ -17,6 +17,10 @@
 {
     <p class="form-error">@_checkError</p>
 }
+@if (_transferError is not null)
+{
+    <p class="form-error">@_transferError</p>
+}
 
 <section class="toolbar">
     <div class="filters">
@@ -80,6 +84,20 @@ else
                                 📱 تحقق من التوفر
                             </button>
                             <button class="link-btn danger" @onclick="() => Delete(listing.Id)">حذف</button>
+                            <div class="transfer-owner-row">
+                                <select @bind="_selectedNewOwner[listing.Id]">
+                                    <option value="">نقل الملكية لـ...</option>
+                                    @foreach (var user in _users.Where(u => u.Id != listing.OwnerId))
+                                    {
+                                        <option value="@user.Id">@(user.Email ?? user.UserName ?? user.Id)</option>
+                                    }
+                                </select>
+                                <button class="link-btn"
+                                        disabled="@string.IsNullOrEmpty(GetSelectedNewOwner(listing.Id))"
+                                        @onclick="() => TransferOwnership(listing)">
+                                    نقل
+                                </button>
+                            </div>
                         </td>
                     </tr>
                 }
@@ -90,14 +108,17 @@ else
 
 @code {
     private List<ListingDto> _listings = new();
+    private List<UserDto> _users = new();
     private Dictionary<string, UserDto> _usersById = new();
+    private Dictionary<Guid, string> _selectedNewOwner = new();
     private string _filterRegion = string.Empty;
     private string _filterStatus = string.Empty;
+    private string? _transferError;
 
     protected override async Task OnInitializedAsync()
     {
-        var users = await UnitOfWork.Users.GetAllAsync();
-        _usersById = users.ToDictionary(u => u.Id);
+        _users = await UnitOfWork.Users.GetAllAsync();
+        _usersById = _users.ToDictionary(u => u.Id);
         await Reload();
     }
 
@@ -107,7 +128,17 @@ else
         _listings = await UnitOfWork.Listings.GetAllAsync(
             string.IsNullOrWhiteSpace(_filterRegion) ? null : _filterRegion,
             status);
+
+        // كل صف لازم يكون عنده مدخل جاهز بالقاموس قبل أول render - وإلا الـ @bind على
+        // indexer الـ Dictionary بيرمي KeyNotFoundException لأنه بيحاول يقرأ القيمة الحالية أولاً
+        foreach (var listing in _listings)
+        {
+            _selectedNewOwner.TryAdd(listing.Id, string.Empty);
+        }
     }
+
+    private string GetSelectedNewOwner(Guid listingId) =>
+        _selectedNewOwner.TryGetValue(listingId, out var value) ? value : string.Empty;
 
     private string OwnerLabel(string? ownerId)
     {
@@ -134,6 +165,29 @@ else
     {
         await UnitOfWork.Listings.DeleteAsync(id);
         await UnitOfWork.CompleteAsync();
+        await Reload();
+    }
+
+    private async Task TransferOwnership(ListingDto listing)
+    {
+        _transferError = null;
+
+        var newOwnerId = GetSelectedNewOwner(listing.Id);
+        if (string.IsNullOrEmpty(newOwnerId) || !_usersById.TryGetValue(newOwnerId, out var newOwner))
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(newOwner.PhoneNumber))
+        {
+            _transferError = $"لا يمكن نقل الإعلان لـ \"{newOwner.Email ?? newOwner.UserName}\" لأنه ما عنده رقم هاتف مسجّل بحسابه.";
+            return;
+        }
+
+        await UnitOfWork.Listings.TransferOwnershipAsync(listing.Id, newOwnerId, newOwner.PhoneNumber);
+        await UnitOfWork.CompleteAsync();
+
+        _selectedNewOwner[listing.Id] = string.Empty;
         await Reload();
     }
 
