@@ -27,7 +27,8 @@ internal class SettingsRepository : ISettingsRepository
                 settings.EvolutionApiKey,
                 settings.EvolutionApiInstanceName,
                 settings.AvailabilityCheckEnabled,
-                settings.AvailabilityCheckIntervalDays);
+                settings.AvailabilityCheckIntervalDays,
+                settings.MaxListingsPerUser);
     }
 
     public async Task UpdateAsync(SiteSettingUpdateDto dto)
@@ -47,5 +48,6 @@ internal class SettingsRepository : ISettingsRepository
         settings.EvolutionApiInstanceName = dto.EvolutionApiInstanceName;
         settings.AvailabilityCheckEnabled = dto.AvailabilityCheckEnabled;
         settings.AvailabilityCheckIntervalDays = dto.AvailabilityCheckIntervalDays;
+        settings.MaxListingsPerUser = dto.MaxListingsPerUser;
     }
 }

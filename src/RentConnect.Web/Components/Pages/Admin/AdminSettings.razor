@@ -25,6 +25,12 @@
 
     <hr />
 
+    <label>الحد الأقصى لعدد إعلانات المستخدم العادي</label>
+    <InputNumber @bind-Value="_model.MaxListingsPerUser" min="1" />
+    <p class="wizard-hint">أقصى عدد إعلانات يقدر أي مستخدم عادي (غير أدمن) ينشئها بنفس الوقت. حسابات الأدمن غير مقيّدة بهذا الحد.</p>
+
+    <hr />
+
     <label>رابط Evolution API</label>
     <InputText @bind-Value="_model.EvolutionApiBaseUrl" placeholder="http://localhost:8090" />
 
@@ -161,6 +167,7 @@ else
             EvolutionApiInstanceName = settings.EvolutionApiInstanceName,
             AvailabilityCheckEnabled = settings.AvailabilityCheckEnabled,
             AvailabilityCheckIntervalDays = settings.AvailabilityCheckIntervalDays,
+            MaxListingsPerUser = settings.MaxListingsPerUser,
         };
 
         if (!string.IsNullOrWhiteSpace(_model.EvolutionApiBaseUrl) && !string.IsNullOrWhiteSpace(_model.EvolutionApiKey))
@@ -179,7 +186,8 @@ else
             _model.EvolutionApiKey,
             _model.EvolutionApiInstanceName,
             _model.AvailabilityCheckEnabled,
-            _model.AvailabilityCheckIntervalDays));
+            _model.AvailabilityCheckIntervalDays,
+            _model.MaxListingsPerUser));
         await UnitOfWork.CompleteAsync();
         _savedMessage = "تم حفظ الإعدادات بنجاح.";
     }
@@ -288,7 +296,8 @@ else
             _model.EvolutionApiKey,
             _model.EvolutionApiInstanceName,
             _model.AvailabilityCheckEnabled,
-            _model.AvailabilityCheckIntervalDays));
+            _model.AvailabilityCheckIntervalDays,
+            _model.MaxListingsPerUser));
         await UnitOfWork.CompleteAsync();
 
         _savedMessage = $"تم اختيار \"{instanceName}\" للتحقق وحفظه.";
@@ -304,5 +313,6 @@ else
         public string? EvolutionApiInstanceName { get; set; }
         public bool AvailabilityCheckEnabled { get; set; }
         public int? AvailabilityCheckIntervalDays { get; set; }
+        public int MaxListingsPerUser { get; set; } = 3;
     }
 }

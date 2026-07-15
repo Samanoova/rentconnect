@@ -24,4 +24,7 @@ internal class SiteSetting
     // خدمة التحقق الدوري من توفر الإعلانات عبر واتساب - تفعيل/تعطيل وكل كم يوم
     public bool AvailabilityCheckEnabled { get; set; }
     public int? AvailabilityCheckIntervalDays { get; set; }
+
+    // الحد الأقصى لعدد الإعلانات النشطة لكل مستخدم عادي (لا ينطبق على الأدمن)
+    public int MaxListingsPerUser { get; set; } = 3;
 }

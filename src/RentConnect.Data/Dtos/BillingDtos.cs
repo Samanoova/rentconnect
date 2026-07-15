@@ -8,7 +8,8 @@ public record SiteSettingDto(
     string? EvolutionApiKey = null,
     string? EvolutionApiInstanceName = null,
     bool AvailabilityCheckEnabled = false,
-    int? AvailabilityCheckIntervalDays = null);
+    int? AvailabilityCheckIntervalDays = null,
+    int MaxListingsPerUser = 3);
 
 public record SiteSettingUpdateDto(
     decimal PhoneRevealFeeJod,
@@ -18,6 +19,7 @@ public record SiteSettingUpdateDto(
     string? EvolutionApiKey = null,
     string? EvolutionApiInstanceName = null,
     bool AvailabilityCheckEnabled = false,
-    int? AvailabilityCheckIntervalDays = null);
+    int? AvailabilityCheckIntervalDays = null,
+    int MaxListingsPerUser = 3);
 
 public record PhoneRevealChargeDto(Guid Id, Guid ListingId, string ListingTitle, decimal AmountJod, DateTime CreatedAt, bool IsSettled, bool IsCancelled);

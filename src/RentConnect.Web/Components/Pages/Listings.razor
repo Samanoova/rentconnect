@@ -49,8 +49,15 @@
             <option value="Suspended">معلّق</option>
         </select>
     </div>
-    <button class="btn btn-primary" @onclick="OpenAdd">+ إعلان جديد</button>
+    <button class="btn btn-primary" @onclick="OpenAdd" disabled="@(!_isAdmin && _totalOwnedCount >= _maxListingsPerUser)">+ إعلان جديد</button>
 </section>
+
+@if (!_isAdmin && _totalOwnedCount >= _maxListingsPerUser)
+{
+    <p class="form-error">
+        وصلت للحد الأقصى المسموح (@_maxListingsPerUser إعلانات). احذف إعلاناً قديماً لتقدر تضيف إعلاناً جديداً.
+    </p>
+}
 
 @if (_listings.Count == 0)
 {
@@ -75,10 +82,13 @@ else
     [CascadingParameter] private Task<AuthenticationState> AuthStateTask { get; set; } = default!;
 
     private string? _currentUserId;
+    private bool _isAdmin;
     private List<ListingDto> _listings = new();
     private string _filterRegion = string.Empty;
     private string _filterStatus = string.Empty;
     private int _staleCount;
+    private int _totalOwnedCount;
+    private int _maxListingsPerUser = 3;
 
     private bool _showModal;
     private Guid? _editingId;
@@ -87,6 +97,11 @@ else
     {
         var authState = await AuthStateTask;
         _currentUserId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        _isAdmin = authState.User.IsInRole(RoleNames.Admin);
+
+        var settings = await UnitOfWork.Settings.GetAsync();
+        _maxListingsPerUser = settings.MaxListingsPerUser;
+
         await Reload();
     }
 
@@ -101,12 +116,19 @@ else
             status,
             ownerId: _currentUserId);
 
+        // العدد الفعلي غير المفلتَر - لازم نتحقق من الحد الأقصى بناءً عليه، مش على _listings
+        // اللي ممكن تكون مفلترة حسب المنطقة/الحالة المختارة بالأعلى
+        var allOwned = await UnitOfWork.Listings.GetAllAsync(ownerId: _currentUserId);
+        _totalOwnedCount = allOwned.Count;
+
         var stale = await UnitOfWork.Listings.GetStaleAsync(7, _currentUserId);
         _staleCount = stale.Count;
     }
 
     private void OpenAdd()
     {
+        if (!_isAdmin && _totalOwnedCount >= _maxListingsPerUser) return;
+
         _editingId = null;
         _showModal = true;
     }
